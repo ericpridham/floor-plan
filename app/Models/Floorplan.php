@@ -1,0 +1,42 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Storage;
+
+class Floorplan extends Model
+{
+    use HasFactory;
+
+    protected $fillable = ['user_id', 'name', 'image_path', 'width_px', 'height_px'];
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function rooms(): HasMany
+    {
+        return $this->hasMany(Room::class);
+    }
+
+    public function designs(): BelongsToMany
+    {
+        return $this->belongsToMany(Design::class, 'design_floorplans');
+    }
+
+    public function thumbnailUrl(): string
+    {
+        return Storage::disk('public')->url($this->image_path);
+    }
+
+    public function deleteImage(): void
+    {
+        Storage::disk('public')->delete($this->image_path);
+    }
+}
