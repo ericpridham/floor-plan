@@ -84,16 +84,83 @@
 {{-- Designs --}}
 <section>
     <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg font-semibold text-gray-900">Designs</h2>
+        <h2 class="text-lg font-semibold text-gray-900">Designs <span class="ml-1 text-sm font-normal text-gray-400">({{ $designs->count() }})</span></h2>
+        @if ($floorplans->isNotEmpty())
+            <a href="{{ route('designs.create') }}"
+                class="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                New Design
+            </a>
+        @endif
     </div>
-    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-12 text-center text-gray-400">
-        <svg class="mx-auto mb-3 w-12 h-12 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
-        </svg>
-        <p class="text-sm font-medium">No designs yet</p>
-        <p class="text-xs mt-1">Create a design once you have floorplans.</p>
-    </div>
+
+    @if ($designs->isEmpty())
+        <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-12 text-center text-gray-400">
+            <svg class="mx-auto mb-3 w-12 h-12 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+            </svg>
+            <p class="text-sm font-medium">No designs yet</p>
+            <p class="text-xs mt-1">
+                @if ($floorplans->isEmpty())
+                    Upload a floorplan first, then create a design.
+                @else
+                    <a href="{{ route('designs.create') }}" class="text-indigo-600 hover:underline">Create your first design →</a>
+                @endif
+            </p>
+        </div>
+    @else
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            @foreach ($designs as $design)
+            <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex flex-col">
+                <div class="flex-1">
+                    <h3 class="font-medium text-gray-900 text-sm truncate" title="{{ $design->name }}">{{ $design->name }}</h3>
+                    <p class="text-xs text-gray-400 mt-0.5">
+                        {{ $design->floorplans_count }} {{ $design->floorplans_count === 1 ? 'floorplan' : 'floorplans' }} ·
+                        {{ $design->updated_at->format('M j, Y') }}
+                    </p>
+                </div>
+                <div class="mt-4 pt-3 border-t border-gray-100 flex items-center gap-2">
+                    <a href="{{ route('designs.show', $design) }}"
+                        class="text-xs px-2.5 py-1.5 bg-indigo-50 text-indigo-700 rounded-md hover:bg-indigo-100 transition-colors">Open</a>
+
+                    <button type="button"
+                        data-design-id="{{ $design->id }}"
+                        data-design-name="{{ $design->name }}"
+                        onclick="openDesignRenameModal(this)"
+                        class="text-xs px-2.5 py-1.5 bg-gray-100 text-gray-600 rounded-md hover:bg-gray-200 transition-colors">Rename</button>
+
+                    <form method="POST" action="{{ route('designs.destroy', $design) }}" class="ml-auto"
+                        onsubmit="return confirm('Delete this design? This cannot be undone.')">
+                        @csrf
+                        @method('DELETE')
+                        <button type="submit" class="text-xs px-2.5 py-1.5 bg-red-50 text-red-600 rounded-md hover:bg-red-100 transition-colors">Delete</button>
+                    </form>
+                </div>
+            </div>
+            @endforeach
+        </div>
+    @endif
 </section>
+
+{{-- Design rename modal --}}
+<div id="designRenameModal" class="fixed inset-0 z-50 hidden flex items-center justify-center">
+    <div class="absolute inset-0 bg-black/40" onclick="closeDesignRenameModal()"></div>
+    <div class="relative bg-white rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
+        <h3 class="text-base font-semibold text-gray-900 mb-4">Rename Design</h3>
+        <form id="designRenameForm" method="POST" action="">
+            @csrf
+            @method('PATCH')
+            <input type="text" id="designRenameInput" name="name" required maxlength="100"
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 mb-4">
+            <div class="flex gap-3 justify-end">
+                <button type="button" onclick="closeDesignRenameModal()"
+                    class="px-4 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+                <button type="submit"
+                    class="px-4 py-2 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
 
 {{-- Rename Modal --}}
 <div id="renameModal" class="fixed inset-0 z-50 hidden flex items-center justify-center">
@@ -136,8 +203,24 @@ function closeRenameModal() {
     document.getElementById('renameModal').classList.add('hidden');
 }
 
+function openDesignRenameModal(btn) {
+    const id   = btn.dataset.designId;
+    const name = btn.dataset.designName;
+    document.getElementById('designRenameForm').action = '{{ url('/designs') }}/' + id;
+    document.getElementById('designRenameInput').value = name;
+    document.getElementById('designRenameModal').classList.remove('hidden');
+    document.getElementById('designRenameInput').focus();
+    document.getElementById('designRenameInput').select();
+}
+function closeDesignRenameModal() {
+    document.getElementById('designRenameModal').classList.add('hidden');
+}
+
 document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') closeRenameModal();
+    if (e.key === 'Escape') {
+        closeRenameModal();
+        closeDesignRenameModal();
+    }
 });
 
 function confirmDelete(event, designsCount) {

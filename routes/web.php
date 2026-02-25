@@ -4,6 +4,7 @@ use App\Http\Controllers\Api;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DesignController;
 use App\Http\Controllers\FloorplanController;
 use App\Http\Controllers\FloorplanSetupController;
 use Illuminate\Support\Facades\Route;
@@ -31,4 +32,11 @@ Route::middleware('auth')->group(function () {
     Route::get('/floorplans/{floorplan}/setup', [FloorplanSetupController::class, 'show'])->name('floorplans.setup');
     Route::get('/api/floorplans/{floorplan}/rooms', [Api\RoomSyncController::class, 'index'])->name('api.rooms.index');
     Route::put('/api/floorplans/{floorplan}/rooms', [Api\RoomSyncController::class, 'sync'])->name('api.rooms.sync');
+
+    // Phase 4
+    Route::get('/designs/create', [DesignController::class, 'create'])->name('designs.create');
+    Route::post('/designs', [DesignController::class, 'store'])->name('designs.store');
+    Route::get('/designs/{design}', [DesignController::class, 'show'])->name('designs.show');
+    Route::patch('/designs/{design}', [DesignController::class, 'update'])->name('designs.update');
+    Route::delete('/designs/{design}', [DesignController::class, 'destroy'])->name('designs.destroy');
 });

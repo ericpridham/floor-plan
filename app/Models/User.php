@@ -50,4 +50,9 @@ class User extends Authenticatable
     {
         return $this->hasMany(Floorplan::class);
     }
+
+    public function designs(): HasMany
+    {
+        return $this->hasMany(Design::class);
+    }
 }
