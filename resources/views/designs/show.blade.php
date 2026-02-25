@@ -28,7 +28,7 @@
           <input type="color" id="entryColor" value="#6366f1"
             class="flex-shrink-0 w-8 h-8 rounded border border-gray-300 cursor-pointer p-0.5">
           <input type="text" id="entryLabel" placeholder="Label" maxlength="100"
-            class="flex-1 text-sm border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+            class="flex-1 min-w-0 text-sm border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500">
         </div>
         <div class="flex gap-2">
           <button id="saveEntryBtn" class="flex-1 text-xs py-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700">Add</button>
