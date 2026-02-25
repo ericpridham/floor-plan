@@ -1,4 +1,4 @@
-@extends('layouts.app')
+@extends('layouts.app', ['hideFooter' => true])
 @section('title', $design->name)
 @section('content')
 <div class="flex gap-0 -mx-4 sm:-mx-6 lg:-mx-8 -my-8" style="height:calc(100vh - 64px)">

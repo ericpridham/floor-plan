@@ -1,4 +1,4 @@
-@extends('layouts.app')
+@extends('layouts.app', ['hideFooter' => true])
 @section('title', 'Setup — ' . $floorplan->name)
 @section('content')
 {{-- full-height two-column layout --}}

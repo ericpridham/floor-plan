@@ -42,9 +42,11 @@
         @yield('content')
     </main>
 
+    @if(!isset($hideFooter) || !$hideFooter)
     <footer class="bg-white border-t border-gray-200 py-4 text-center text-xs text-gray-400">
         &copy; {{ date('Y') }} FloorPlan
     </footer>
+    @endif
     @stack('scripts')
 </body>
 </html>
