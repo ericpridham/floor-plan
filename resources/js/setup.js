@@ -26,7 +26,16 @@
   // Drag/resize state
   let dragState = null;
 
+  // Pan/zoom state
+  let scale = 1;
+  let panX = 0;
+  let panY = 0;
+  let isPanning = false;
+  let panStart = null;
+
   // DOM refs
+  const canvasContent  = document.getElementById('canvasContent');
+  const canvasViewport = document.getElementById('canvasViewport');
   const overlay    = document.getElementById('roomOverlay');
   const img        = document.getElementById('floorplanImg');
   const roomList   = document.getElementById('roomList');
@@ -834,6 +843,43 @@
       }
     }
   });
+
+  // ─── Pan & zoom ───────────────────────────────────────────────────────────
+  function applyTransform() {
+    canvasContent.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+  }
+
+  canvasViewport.addEventListener('mousedown', e => {
+    if (e.target !== canvasViewport && e.target !== canvasContent) return;
+    isPanning = true;
+    panStart = { x: e.clientX - panX, y: e.clientY - panY };
+    canvasViewport.style.cursor = 'grabbing';
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!isPanning) return;
+    panX = e.clientX - panStart.x;
+    panY = e.clientY - panStart.y;
+    applyTransform();
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (isPanning) {
+      isPanning = false;
+      canvasViewport.style.cursor = 'grab';
+    }
+  });
+
+  canvasViewport.addEventListener('wheel', e => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    scale = Math.max(0.2, Math.min(4, scale * delta));
+    applyTransform();
+  }, { passive: false });
+
+  document.getElementById('zoomIn')?.addEventListener('click',    () => { scale = Math.min(4, scale * 1.2); applyTransform(); });
+  document.getElementById('zoomOut')?.addEventListener('click',   () => { scale = Math.max(0.2, scale * 0.8); applyTransform(); });
+  document.getElementById('zoomReset')?.addEventListener('click', () => { scale = 1; panX = 0; panY = 0; applyTransform(); });
 
   // ─── Init ─────────────────────────────────────────────────────────────────
   function init() {

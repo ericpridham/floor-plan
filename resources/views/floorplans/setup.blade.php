@@ -22,7 +22,7 @@
   </aside>
 
   {{-- Main canvas area --}}
-  <main class="flex-1 overflow-hidden bg-gray-100 relative flex items-center justify-center p-4">
+  <main class="flex-1 overflow-hidden bg-gray-100 relative" id="canvasArea">
     <div id="setupHint" class="text-xs text-gray-400 absolute top-3 left-3 z-10">
       Click and drag to draw a room. Click a room to select. Double-click label to rename.
     </div>
@@ -33,17 +33,28 @@
       <button id="modePoly" class="px-3 py-1.5 text-xs font-medium rounded-md bg-white text-gray-600 shadow hover:bg-gray-50 border border-gray-200 transition-colors" title="Click vertices to define a polygon room">Polygon</button>
     </div>
 
-    {{-- Canvas container: image + overlay --}}
-    <div id="canvasWrap" class="relative select-none shadow-lg" style="max-width:100%;max-height:100%">
-      <img
-        id="floorplanImg"
-        src="{{ $floorplan->thumbnail_url }}"
-        alt="{{ $floorplan->name }}"
-        class="block max-w-full max-h-full"
-        style="max-height: calc(100vh - 130px)"
-        draggable="false"
-      >
-      <div id="roomOverlay" class="absolute inset-0 overflow-hidden cursor-crosshair"></div>
+    <div id="canvasViewport" class="w-full h-full overflow-hidden relative cursor-grab active:cursor-grabbing flex items-center justify-center p-4">
+      <div id="canvasContent" class="relative flex items-center justify-center" style="transform-origin:center">
+        {{-- Canvas container: image + overlay --}}
+        <div id="canvasWrap" class="relative select-none shadow-lg" style="max-width:100%;max-height:100%">
+          <img
+            id="floorplanImg"
+            src="{{ $floorplan->thumbnail_url }}"
+            alt="{{ $floorplan->name }}"
+            class="block max-w-full max-h-full"
+            style="max-height: calc(100vh - 130px)"
+            draggable="false"
+          >
+          <div id="roomOverlay" class="absolute inset-0 overflow-hidden cursor-crosshair"></div>
+        </div>
+      </div>
+    </div>
+
+    {{-- Zoom controls --}}
+    <div class="absolute bottom-4 right-4 flex flex-col gap-1 z-10">
+      <button id="zoomIn"  class="w-8 h-8 bg-white rounded-lg shadow border border-gray-200 text-gray-600 text-lg flex items-center justify-center hover:bg-gray-50">+</button>
+      <button id="zoomOut" class="w-8 h-8 bg-white rounded-lg shadow border border-gray-200 text-gray-600 text-lg flex items-center justify-center hover:bg-gray-50">−</button>
+      <button id="zoomReset" class="w-8 h-8 bg-white rounded-lg shadow border border-gray-200 text-xs text-gray-600 flex items-center justify-center hover:bg-gray-50">1:1</button>
     </div>
   </main>
 </div>
