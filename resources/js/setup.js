@@ -284,7 +284,7 @@
     // HTML delete button (matches rectangle delete button style)
     const del = document.createElement('button');
     del.className = 'poly-overlay room-delete absolute w-4 h-4 rounded-full bg-red-500 text-white text-xs leading-none flex items-center justify-center transition-opacity';
-    del.style.cssText = `left:calc(${room.x + room.width}% - 8px);top:calc(${room.y}% - 8px);opacity:${isSelected ? '1' : '0'};`;
+    del.style.cssText = `left:calc(${room.x + room.width}% + 8px);top:calc(${room.y}% - 8px);opacity:${isSelected ? '1' : '0'};`;
     del.textContent = '×';
     del.title = 'Delete room';
     del.addEventListener('mousedown', e => { e.stopPropagation(); deleteRoom(room.id); });
