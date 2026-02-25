@@ -26,7 +26,7 @@
       <div id="addEntryForm" class="hidden space-y-2">
         <div class="flex items-center gap-2">
           <input type="color" id="entryColor" value="#6366f1"
-            class="w-8 h-8 rounded border border-gray-300 cursor-pointer p-0.5">
+            class="flex-shrink-0 w-8 h-8 rounded border border-gray-300 cursor-pointer p-0.5">
           <input type="text" id="entryLabel" placeholder="Label" maxlength="100"
             class="flex-1 text-sm border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500">
         </div>
