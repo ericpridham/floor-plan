@@ -37,11 +37,11 @@ class FloorplanController extends Controller
         $ext  = $mimeToExt[$file->getMimeType()] ?? 'png';
         $path = "floorplans/" . Auth::id() . "/" . Str::uuid() . "." . $ext;
 
-        Storage::disk('public')->putFileAs(
-            dirname($path),
-            $file,
-            basename($path)
-        );
+        \App\Models\FileUpload::create([
+            'path' => $path,
+            'mime_type' => $file->getMimeType(),
+            'base64_content' => base64_encode(file_get_contents($file->getRealPath())),
+        ]);
 
         Floorplan::create([
             'user_id'    => Auth::id(),

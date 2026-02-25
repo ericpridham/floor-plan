@@ -155,11 +155,14 @@ class IconTest extends TestCase
     // 6. test_user_can_delete_own_icon
     public function test_user_can_delete_own_icon(): void
     {
-        Storage::fake('public');
         $user = $this->makeUser();
 
         $storedPath = 'icons/' . $user->id . '/test.svg';
-        Storage::disk('public')->put($storedPath, '<svg/>');
+        \App\Models\FileUpload::create([
+            'path' => $storedPath,
+            'mime_type' => 'image/svg+xml',
+            'base64_content' => base64_encode('<svg/>')
+        ]);
 
         $icon = IconLibrary::create([
             'user_id'  => $user->id,
@@ -174,7 +177,7 @@ class IconTest extends TestCase
              ->assertJson(['deleted' => true]);
 
         $this->assertDatabaseMissing('icon_libraries', ['id' => $icon->id]);
-        Storage::disk('public')->assertMissing($storedPath);
+        $this->assertDatabaseMissing('file_uploads', ['path' => $storedPath]);
     }
 
     // 7. test_delete_forbidden_for_non_owner

@@ -34,11 +34,11 @@ class Floorplan extends Model
 
     public function getThumbnailUrlAttribute(): string
     {
-        return Storage::disk('public')->url($this->image_path);
+        return route('assets.show', ['path' => $this->image_path]);
     }
 
     public function deleteImage(): void
     {
-        Storage::disk('public')->delete($this->image_path);
+        \App\Models\FileUpload::where('path', $this->image_path)->delete();
     }
 }

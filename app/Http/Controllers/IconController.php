@@ -32,11 +32,11 @@ class IconController extends Controller
         }
 
         $relativePath = 'icons/' . Auth::id() . '/' . Str::uuid() . '.' . $ext;
-        Storage::disk('public')->putFileAs(
-            'icons/' . Auth::id(),
-            $file,
-            basename($relativePath)
-        );
+        \App\Models\FileUpload::create([
+            'path' => $relativePath,
+            'mime_type' => $file->getMimeType(),
+            'base64_content' => base64_encode(file_get_contents($file->getRealPath())),
+        ]);
 
         $icon = IconLibrary::create([
             'user_id'  => Auth::id(),
@@ -46,7 +46,7 @@ class IconController extends Controller
         ]);
 
         return response()->json(array_merge($icon->toArray(), [
-            'url' => Storage::disk('public')->url($relativePath),
+            'url' => route('assets.show', ['path' => $relativePath]),
         ]), 201);
     }
 
@@ -58,7 +58,7 @@ class IconController extends Controller
 
         $relativePath = $iconLibrary->svg_path;
         $iconLibrary->delete();
-        Storage::disk('public')->delete($relativePath);
+        \App\Models\FileUpload::where('path', $relativePath)->delete();
 
         return response()->json(['deleted' => true, 'was_in_use' => $usedInDesigns]);
     }

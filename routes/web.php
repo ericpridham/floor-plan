@@ -26,6 +26,8 @@ Route::post('/logout', [LoginController::class, 'logout'])->name('logout')->midd
 Route::middleware('auth')->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
+    Route::get('/assets/{path}', [App\Http\Controllers\AssetController::class, 'show'])->where('path', '.*')->name('assets.show');
+
     Route::get('/floorplans/create', [FloorplanController::class, 'create'])->name('floorplans.create');
     Route::post('/floorplans', [FloorplanController::class, 'store'])->name('floorplans.store');
     Route::patch('/floorplans/{floorplan}', [FloorplanController::class, 'update'])->name('floorplans.update');

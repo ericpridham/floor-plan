@@ -70,7 +70,7 @@ class FloorplanTest extends TestCase
         ]);
 
         $floorplan = Floorplan::where('user_id', $user->id)->first();
-        Storage::disk('public')->assertExists($floorplan->image_path);
+        $this->assertDatabaseHas('file_uploads', ['path' => $floorplan->image_path]);
     }
 
     public function test_upload_fails_with_missing_name(): void
@@ -201,8 +201,6 @@ class FloorplanTest extends TestCase
 
     public function test_user_can_delete_their_floorplan(): void
     {
-        Storage::fake('public');
-
         $user = User::factory()->create();
 
         $floorplan = Floorplan::create([
@@ -213,14 +211,18 @@ class FloorplanTest extends TestCase
             'height_px'  => 600,
         ]);
 
-        Storage::disk('public')->put($floorplan->image_path, 'fake image content');
+        \App\Models\FileUpload::create([
+            'path' => $floorplan->image_path,
+            'mime_type' => 'image/png',
+            'base64_content' => base64_encode('fake image content')
+        ]);
 
         $response = $this->actingAs($user)->delete("/floorplans/{$floorplan->id}");
 
         $response->assertRedirect(route('dashboard'));
 
         $this->assertDatabaseMissing('floorplans', ['id' => $floorplan->id]);
-        Storage::disk('public')->assertMissing($floorplan->image_path);
+        $this->assertDatabaseMissing('file_uploads', ['path' => $floorplan->image_path]);
     }
 
     public function test_user_cannot_delete_another_users_floorplan(): void
@@ -300,7 +302,6 @@ class FloorplanTest extends TestCase
 
     public function test_delete_removes_image_when_floorplan_has_rooms(): void
     {
-        Storage::fake('public');
         $user = User::factory()->create();
         $floorplan = Floorplan::create([
             'user_id'    => $user->id,
@@ -309,8 +310,11 @@ class FloorplanTest extends TestCase
             'width_px'   => 800,
             'height_px'  => 600,
         ]);
-        // Put a fake file on disk
-        Storage::disk('public')->put('floorplans/1/test.png', 'fake');
+        \App\Models\FileUpload::create([
+            'path' => 'floorplans/1/test.png',
+            'mime_type' => 'image/png',
+            'base64_content' => base64_encode('fake image content')
+        ]);
         // Create a room
         \App\Models\Room::create([
             'floorplan_id' => $floorplan->id,
@@ -323,6 +327,6 @@ class FloorplanTest extends TestCase
         $response->assertRedirect(route('dashboard'));
         $this->assertDatabaseMissing('floorplans', ['id' => $floorplan->id]);
         $this->assertDatabaseMissing('rooms', ['floorplan_id' => $floorplan->id]);
-        Storage::disk('public')->assertMissing('floorplans/1/test.png');
+        $this->assertDatabaseMissing('file_uploads', ['path' => 'floorplans/1/test.png']);
     }
 }

@@ -2,7 +2,15 @@
   "permissions": {
     "allow": [
       "Bash(gh repo:*)",
-      "Bash(git branch:*)"
+      "Bash(git branch:*)",
+      "Bash(php:*)",
+      "Bash(php8.4 artisan:*)",
+      "Bash(git commit:*)",
+      "Skill(commit-commands:commit)"
     ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": true
   }
 }

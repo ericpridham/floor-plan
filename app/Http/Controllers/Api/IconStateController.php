@@ -25,7 +25,7 @@ class IconStateController extends Controller
             ->orderBy('label')
             ->get()
             ->map(fn(IconLibrary $icon) => array_merge($icon->toArray(), [
-                'url' => Storage::disk('public')->url($icon->svg_path),
+                'url' => route('assets.show', ['path' => $icon->svg_path]),
             ]));
 
         return response()->json(['built_in' => $builtIn, 'custom' => $custom]);
