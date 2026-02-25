@@ -222,10 +222,8 @@
   function renderPolygonRoom(room) {
     const isSelected = selected === room.id;
     const centroid   = computeCentroid(room.vertices);
-    const maxX = Math.max(...room.vertices.map(v => v.x));
-    const minY = Math.min(...room.vertices.map(v => v.y));
 
-    // SVG group
+    // SVG group (shape only)
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.classList.add('poly-room');
     g.dataset.id = room.id;
@@ -235,7 +233,8 @@
     poly.setAttribute('points', room.vertices.map(v => `${v.x},${v.y}`).join(' '));
     poly.setAttribute('fill', isSelected ? 'rgba(79,70,229,0.18)' : 'rgba(79,70,229,0.08)');
     poly.setAttribute('stroke', 'rgba(79,70,229,0.8)');
-    poly.setAttribute('stroke-width', '0.4');
+    poly.setAttribute('stroke-width', '2');
+    poly.setAttribute('vector-effect', 'non-scaling-stroke');
     poly.style.cursor = 'move';
     poly.style.pointerEvents = 'all';
     poly.addEventListener('mousedown', e => {
@@ -244,59 +243,6 @@
       startMovePolygon(e, room);
     });
     g.appendChild(poly);
-
-    // Room name label
-    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    text.setAttribute('x', centroid.x);
-    text.setAttribute('y', centroid.y);
-    text.setAttribute('text-anchor', 'middle');
-    text.setAttribute('dominant-baseline', 'central');
-    text.setAttribute('font-size', '2.5');
-    text.setAttribute('fill', '#1e1b4b');
-    text.setAttribute('font-weight', '500');
-    text.style.pointerEvents = 'all';
-    text.style.userSelect = 'none';
-    text.style.cursor = 'text';
-    text.textContent = room.name;
-    text.addEventListener('mousedown', e => {
-      e.stopPropagation();
-      selectRoom(room.id);
-      startMovePolygon(e, room);
-    });
-    text.addEventListener('dblclick', e => {
-      e.stopPropagation();
-      startPolygonRename(room.id, text, centroid);
-    });
-    g.appendChild(text);
-
-    // Delete button (SVG circle + ×)
-    const delG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    delG.style.cursor = 'pointer';
-    delG.style.pointerEvents = 'all';
-    delG.style.opacity = isSelected ? '1' : '0';
-    delG.classList.add('poly-del-btn');
-    const delCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    delCircle.setAttribute('cx', maxX);
-    delCircle.setAttribute('cy', minY);
-    delCircle.setAttribute('r', '2');
-    delCircle.setAttribute('fill', '#ef4444');
-    const delTxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    delTxt.setAttribute('x', maxX);
-    delTxt.setAttribute('y', minY);
-    delTxt.setAttribute('text-anchor', 'middle');
-    delTxt.setAttribute('dominant-baseline', 'central');
-    delTxt.setAttribute('font-size', '3');
-    delTxt.setAttribute('fill', 'white');
-    delTxt.style.pointerEvents = 'none';
-    delTxt.textContent = '×';
-    delG.appendChild(delCircle);
-    delG.appendChild(delTxt);
-    delG.addEventListener('mousedown', e => { e.stopPropagation(); deleteRoom(room.id); });
-    g.appendChild(delG);
-
-    // Show delete on hover
-    poly.addEventListener('mouseenter', () => delG.style.opacity = '1');
-    poly.addEventListener('mouseleave', () => { if (selected !== room.id) delG.style.opacity = '0'; });
 
     // Vertex dots when selected
     if (isSelected) {
@@ -307,13 +253,40 @@
         vc.setAttribute('r', '1');
         vc.setAttribute('fill', 'white');
         vc.setAttribute('stroke', '#4f46e5');
-        vc.setAttribute('stroke-width', '0.3');
+        vc.setAttribute('stroke-width', '1.5');
+        vc.setAttribute('vector-effect', 'non-scaling-stroke');
         vc.style.pointerEvents = 'none';
         g.appendChild(vc);
       });
     }
 
     svg.appendChild(g);
+
+    // HTML label (matches rectangle label style)
+    const label = document.createElement('span');
+    label.className = 'poly-overlay room-label absolute text-xs font-medium text-indigo-900 bg-white/80 rounded px-1 leading-tight select-none truncate';
+    label.style.cssText = `left:calc(${room.x}% + 4px);top:calc(${room.y}% + 4px);max-width:calc(${room.width}% - 8px);pointer-events:auto;cursor:text;`;
+    label.textContent = room.name;
+    label.addEventListener('mousedown', e => { e.stopPropagation(); selectRoom(room.id); });
+    label.addEventListener('dblclick', e => { e.stopPropagation(); startPolygonRename(room.id, centroid); });
+    overlay.appendChild(label);
+
+    // HTML delete button (matches rectangle delete button style)
+    const del = document.createElement('button');
+    del.className = 'poly-overlay room-delete absolute w-4 h-4 rounded-full bg-red-500 text-white text-xs leading-none flex items-center justify-center transition-opacity';
+    del.style.cssText = `left:calc(${room.x + room.width}% - 8px);top:calc(${room.y}% - 8px);opacity:${isSelected ? '1' : '0'};`;
+    del.textContent = '×';
+    del.title = 'Delete room';
+    del.addEventListener('mousedown', e => { e.stopPropagation(); deleteRoom(room.id); });
+    overlay.appendChild(del);
+
+    // Hover to show/hide delete button
+    const showDel = () => del.style.opacity = '1';
+    const hideDel = () => { if (selected !== room.id) del.style.opacity = '0'; };
+    poly.addEventListener('mouseenter', showDel);
+    poly.addEventListener('mouseleave', hideDel);
+    label.addEventListener('mouseenter', showDel);
+    label.addEventListener('mouseleave', hideDel);
   }
 
   // ─── Sidebar list ─────────────────────────────────────────────────────────
@@ -387,7 +360,7 @@
   }
 
   // ─── Rename (polygon rooms — inline overlay input) ────────────────────────
-  function startPolygonRename(id, svgTextEl, centroid) {
+  function startPolygonRename(id, centroid) {
     const room = rooms.find(r => r.id === id);
     if (!room) return;
 
