@@ -205,6 +205,16 @@
     el.dataset.roomId = room.id;
     el.style.cssText = `left:${room.x}%;top:${room.y}%;width:${room.width}%;height:${room.height}%;`;
 
+    // Apply polygon clip-path for non-rectangular rooms
+    if (room.vertices && room.vertices.length >= 3) {
+      const clipPoints = room.vertices.map(v => {
+        const rx = room.width  > 0 ? ((v.x - room.x) / room.width)  * 100 : 0;
+        const ry = room.height > 0 ? ((v.y - room.y) / room.height) * 100 : 0;
+        return `${rx}% ${ry}%`;
+      }).join(', ');
+      el.style.clipPath = `polygon(${clipPoints})`;
+    }
+
     const hlEntryId = highlights[room.id];
     const entry     = hlEntryId ? keyEntries.find(e => e.id === hlEntryId) : null;
 
@@ -250,13 +260,22 @@
       const room      = fp?.rooms?.find(r => r.id === roomId);
       if (!room) return;
 
+      // Re-apply clip-path in case it was lost
+      if (room.vertices && room.vertices.length >= 3) {
+        const clipPoints = room.vertices.map(v => {
+          const rx = room.width  > 0 ? ((v.x - room.x) / room.width)  * 100 : 0;
+          const ry = room.height > 0 ? ((v.y - room.y) / room.height) * 100 : 0;
+          return `${rx}% ${ry}%`;
+        }).join(', ');
+        el.style.clipPath = `polygon(${clipPoints})`;
+      }
+
       const hlEntryId = highlights[roomId];
       const entry     = hlEntryId ? keyEntries.find(e => e.id === hlEntryId) : null;
 
       if (entry) {
         el.style.background = hexToRgba(entry.color_hex, 0.5);
         el.style.border = `2px solid ${entry.color_hex}`;
-        // Ensure badge
         if (!el.querySelector('[data-badge]')) {
           const badge = document.createElement('span');
           badge.className = 'absolute top-1 left-1 w-3 h-3 rounded-full shadow border border-white';
@@ -1052,17 +1071,27 @@
           const rw = (room.width  / 100) * ew;
           const rh = (room.height / 100) * eh;
 
-          // Semi-transparent fill
           const r = parseInt(entry.color_hex.slice(1, 3), 16);
           const g = parseInt(entry.color_hex.slice(3, 5), 16);
           const b = parseInt(entry.color_hex.slice(5, 7), 16);
-          ctx.fillStyle = `rgba(${r},${g},${b},0.5)`;
-          ctx.fillRect(rx, ry, rw, rh);
-
-          // Border
+          ctx.fillStyle   = `rgba(${r},${g},${b},0.5)`;
           ctx.strokeStyle = entry.color_hex;
-          ctx.lineWidth = Math.max(1, 2 * ratio);
-          ctx.strokeRect(rx, ry, rw, rh);
+          ctx.lineWidth   = Math.max(1, 2 * ratio);
+
+          if (room.vertices && room.vertices.length >= 3) {
+            ctx.beginPath();
+            room.vertices.forEach((v, i) => {
+              const vx = ex + (v.x / 100) * ew;
+              const vy = ey + (v.y / 100) * eh;
+              i === 0 ? ctx.moveTo(vx, vy) : ctx.lineTo(vx, vy);
+            });
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+          } else {
+            ctx.fillRect(rx, ry, rw, rh);
+            ctx.strokeRect(rx, ry, rw, rh);
+          }
         });
       });
 

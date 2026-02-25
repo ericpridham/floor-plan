@@ -10,13 +10,14 @@ class Room extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['floorplan_id', 'name', 'x', 'y', 'width', 'height'];
+    protected $fillable = ['floorplan_id', 'name', 'x', 'y', 'width', 'height', 'vertices'];
 
     protected $casts = [
-        'x'      => 'float',
-        'y'      => 'float',
-        'width'  => 'float',
-        'height' => 'float',
+        'x'        => 'float',
+        'y'        => 'float',
+        'width'    => 'float',
+        'height'   => 'float',
+        'vertices' => 'array',
     ];
 
     public function floorplan(): BelongsTo

@@ -23,8 +23,14 @@
 
   {{-- Main canvas area --}}
   <main class="flex-1 overflow-hidden bg-gray-100 relative flex items-center justify-center p-4">
-    <div class="text-xs text-gray-400 absolute top-3 left-3 z-10">
+    <div id="setupHint" class="text-xs text-gray-400 absolute top-3 left-3 z-10">
       Click and drag to draw a room. Click a room to select. Double-click label to rename.
+    </div>
+
+    {{-- Mode toggle buttons --}}
+    <div class="absolute top-3 right-3 z-10 flex gap-2">
+      <button id="modeRect" class="px-3 py-1.5 text-xs font-medium rounded-md bg-indigo-600 text-white shadow hover:bg-indigo-700 transition-colors" title="Draw rectangle room">Rectangle</button>
+      <button id="modePoly" class="px-3 py-1.5 text-xs font-medium rounded-md bg-white text-gray-600 shadow hover:bg-gray-50 border border-gray-200 transition-colors" title="Click vertices to define a polygon room">Polygon</button>
     </div>
 
     {{-- Canvas container: image + overlay --}}

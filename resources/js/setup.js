@@ -5,25 +5,45 @@
   'use strict';
 
   // ─── State ────────────────────────────────────────────────────────────────
-  let rooms = [];        // [{ id, name, x, y, width, height }] — id is client-side only (counter)
+  let rooms = [];   // [{ id, name, shape, x, y, width, height, vertices? }]
   let nextId = 1;
   let selected = null;   // id of selected room, or null
   let saveTimer = null;
   let saveRetries = 0;
 
-  // Drawing state
-  let isDrawing = false;
-  let drawStartPct = null; // { x, y } in percentage
+  // Draw mode: 'rectangle' | 'polygon'
+  let drawMode = 'rectangle';
 
-  // Dragging/resizing state
-  let dragState = null; // { type: 'move'|'resize', handle: string, startPct, startRoom }
+  // Rectangle drawing state
+  let isDrawing = false;
+  let drawStartPct = null;
+
+  // Polygon drawing state
+  let isDrawingPolygon = false;
+  let polygonVertices = []; // [{x, y}] in-progress
+  let polygonPreviewMouse = null; // {x, y} or null
+
+  // Drag/resize state
+  let dragState = null;
 
   // DOM refs
-  const overlay   = document.getElementById('roomOverlay');
-  const img       = document.getElementById('floorplanImg');
-  const roomList  = document.getElementById('roomList');
-  const roomCount = document.getElementById('roomCount');
+  const overlay    = document.getElementById('roomOverlay');
+  const img        = document.getElementById('floorplanImg');
+  const roomList   = document.getElementById('roomList');
+  const roomCount  = document.getElementById('roomCount');
   const saveStatus = document.getElementById('saveStatus');
+  const hintEl     = document.getElementById('setupHint');
+  const modeRectBtn = document.getElementById('modeRect');
+  const modePolyBtn = document.getElementById('modePoly');
+
+  // ─── SVG overlay ─────────────────────────────────────────────────────────
+  // Shared SVG for polygon room rendering (lives inside roomOverlay)
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.id = 'roomSvg';
+  svg.setAttribute('viewBox', '0 0 100 100');
+  svg.setAttribute('preserveAspectRatio', 'none');
+  svg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible;';
+  overlay.appendChild(svg);
 
   // ─── Coordinate helpers ───────────────────────────────────────────────────
   function imgRect() { return img.getBoundingClientRect(); }
@@ -31,10 +51,41 @@
   function clientToPct(clientX, clientY) {
     const r = imgRect();
     return {
-      x: Math.max(0, Math.min(100, ((clientX - r.left) / r.width) * 100)),
-      y: Math.max(0, Math.min(100, ((clientY - r.top) / r.height) * 100)),
+      x: Math.max(0, Math.min(100, ((clientX - r.left)  / r.width)  * 100)),
+      y: Math.max(0, Math.min(100, ((clientY - r.top)   / r.height) * 100)),
     };
   }
+
+  function computeCentroid(vertices) {
+    const n = vertices.length;
+    return {
+      x: vertices.reduce((s, v) => s + v.x, 0) / n,
+      y: vertices.reduce((s, v) => s + v.y, 0) / n,
+    };
+  }
+
+  // ─── Draw mode toggle ────────────────────────────────────────────────────
+  function setDrawMode(mode) {
+    if (mode !== 'rectangle' && mode !== 'polygon') return;
+    if (drawMode === 'polygon' && mode !== 'polygon') cancelPolygon();
+    drawMode = mode;
+
+    const activeClass   = 'px-3 py-1.5 text-xs font-medium rounded-md bg-indigo-600 text-white shadow hover:bg-indigo-700 transition-colors';
+    const inactiveClass = 'px-3 py-1.5 text-xs font-medium rounded-md bg-white text-gray-600 shadow hover:bg-gray-50 border border-gray-200 transition-colors';
+
+    if (mode === 'rectangle') {
+      modeRectBtn.className = activeClass;
+      modePolyBtn.className = inactiveClass;
+      if (hintEl) hintEl.textContent = 'Click and drag to draw a room. Click a room to select. Double-click label to rename.';
+    } else {
+      modeRectBtn.className = inactiveClass;
+      modePolyBtn.className = activeClass;
+      if (hintEl) hintEl.textContent = 'Click to add vertices. Double-click or click near the first vertex to close. Esc to cancel.';
+    }
+  }
+
+  modeRectBtn?.addEventListener('click', () => setDrawMode('rectangle'));
+  modePolyBtn?.addEventListener('click', () => setDrawMode('polygon'));
 
   // ─── Save ──────────────────────────────────────────────────────────────────
   function scheduleSave() {
@@ -46,7 +97,12 @@
 
   async function save() {
     saveStatus.textContent = 'Saving…';
-    const payload = rooms.map(({ name, x, y, width, height }) => ({ name, x, y, width, height }));
+    const payload = rooms.map(r => {
+      if (r.shape === 'polygon') {
+        return { name: r.name, vertices: r.vertices };
+      }
+      return { name: r.name, x: r.x, y: r.y, width: r.width, height: r.height };
+    });
     try {
       const res = await fetch(window.ROOMS_SYNC_URL, {
         method: 'PUT',
@@ -72,19 +128,25 @@
 
   // ─── Render ───────────────────────────────────────────────────────────────
   function render() {
-    // Remove old room divs (keep name-prompt if present)
-    overlay.querySelectorAll('.room-rect').forEach(el => el.remove());
+    // Remove old room rects and polygon overlay labels/delete btns
+    overlay.querySelectorAll('.room-rect, .poly-overlay').forEach(el => el.remove());
+
+    // Clear SVG polygon rooms (keep preview group)
+    svg.querySelectorAll('.poly-room').forEach(el => el.remove());
 
     rooms.forEach(room => {
-      const el = makeRoomEl(room);
-      overlay.appendChild(el);
+      if (room.shape === 'polygon') {
+        renderPolygonRoom(room);
+      } else {
+        overlay.appendChild(makeRoomEl(room));
+      }
     });
 
-    // Sidebar list
     renderList();
     roomCount.textContent = rooms.length;
   }
 
+  // ─── Rectangle room element ───────────────────────────────────────────────
   function makeRoomEl(room) {
     const isSelected = selected === room.id;
 
@@ -114,17 +176,14 @@
     del.addEventListener('mousedown', e => { e.stopPropagation(); deleteRoom(room.id); });
     el.appendChild(del);
 
-    // Show delete on hover
     el.addEventListener('mouseenter', () => del.style.opacity = '1');
     el.addEventListener('mouseleave', () => { if (selected !== room.id) del.style.opacity = '0'; });
     if (isSelected) del.style.opacity = '1';
 
-    // Double-click label → rename
     label.style.pointerEvents = 'auto';
     label.style.cursor = 'text';
     label.addEventListener('dblclick', e => { e.stopPropagation(); startRename(room.id, label); });
 
-    // Click → select
     el.addEventListener('mousedown', e => {
       if (e.target === del) return;
       e.stopPropagation();
@@ -132,7 +191,6 @@
       startMove(e, room);
     });
 
-    // Resize handles (8 handles) — only when selected
     if (isSelected) {
       const handles = ['nw','n','ne','e','se','s','sw','w'];
       handles.forEach(h => {
@@ -159,6 +217,105 @@
     el.style.cssText += ';position:absolute;z-index:10;' + hMap[handle];
   }
 
+  // ─── Polygon room element (SVG) ───────────────────────────────────────────
+  function renderPolygonRoom(room) {
+    const isSelected = selected === room.id;
+    const centroid   = computeCentroid(room.vertices);
+    const maxX = Math.max(...room.vertices.map(v => v.x));
+    const minY = Math.min(...room.vertices.map(v => v.y));
+
+    // SVG group
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.classList.add('poly-room');
+    g.dataset.id = room.id;
+
+    // Polygon shape
+    const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    poly.setAttribute('points', room.vertices.map(v => `${v.x},${v.y}`).join(' '));
+    poly.setAttribute('fill', isSelected ? 'rgba(79,70,229,0.18)' : 'rgba(79,70,229,0.08)');
+    poly.setAttribute('stroke', 'rgba(79,70,229,0.8)');
+    poly.setAttribute('stroke-width', '0.4');
+    poly.style.cursor = 'move';
+    poly.style.pointerEvents = 'all';
+    poly.addEventListener('mousedown', e => {
+      e.stopPropagation();
+      selectRoom(room.id);
+      startMovePolygon(e, room);
+    });
+    g.appendChild(poly);
+
+    // Room name label
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('x', centroid.x);
+    text.setAttribute('y', centroid.y);
+    text.setAttribute('text-anchor', 'middle');
+    text.setAttribute('dominant-baseline', 'central');
+    text.setAttribute('font-size', '2.5');
+    text.setAttribute('fill', '#1e1b4b');
+    text.setAttribute('font-weight', '500');
+    text.style.pointerEvents = 'all';
+    text.style.userSelect = 'none';
+    text.style.cursor = 'text';
+    text.textContent = room.name;
+    text.addEventListener('mousedown', e => {
+      e.stopPropagation();
+      selectRoom(room.id);
+      startMovePolygon(e, room);
+    });
+    text.addEventListener('dblclick', e => {
+      e.stopPropagation();
+      startPolygonRename(room.id, text, centroid);
+    });
+    g.appendChild(text);
+
+    // Delete button (SVG circle + ×)
+    const delG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    delG.style.cursor = 'pointer';
+    delG.style.pointerEvents = 'all';
+    delG.style.opacity = isSelected ? '1' : '0';
+    delG.classList.add('poly-del-btn');
+    const delCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    delCircle.setAttribute('cx', maxX);
+    delCircle.setAttribute('cy', minY);
+    delCircle.setAttribute('r', '2');
+    delCircle.setAttribute('fill', '#ef4444');
+    const delTxt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    delTxt.setAttribute('x', maxX);
+    delTxt.setAttribute('y', minY);
+    delTxt.setAttribute('text-anchor', 'middle');
+    delTxt.setAttribute('dominant-baseline', 'central');
+    delTxt.setAttribute('font-size', '3');
+    delTxt.setAttribute('fill', 'white');
+    delTxt.style.pointerEvents = 'none';
+    delTxt.textContent = '×';
+    delG.appendChild(delCircle);
+    delG.appendChild(delTxt);
+    delG.addEventListener('mousedown', e => { e.stopPropagation(); deleteRoom(room.id); });
+    g.appendChild(delG);
+
+    // Show delete on hover
+    poly.addEventListener('mouseenter', () => delG.style.opacity = '1');
+    poly.addEventListener('mouseleave', () => { if (selected !== room.id) delG.style.opacity = '0'; });
+
+    // Vertex dots when selected
+    if (isSelected) {
+      room.vertices.forEach(v => {
+        const vc = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        vc.setAttribute('cx', v.x);
+        vc.setAttribute('cy', v.y);
+        vc.setAttribute('r', '1');
+        vc.setAttribute('fill', 'white');
+        vc.setAttribute('stroke', '#4f46e5');
+        vc.setAttribute('stroke-width', '0.3');
+        vc.style.pointerEvents = 'none';
+        g.appendChild(vc);
+      });
+    }
+
+    svg.appendChild(g);
+  }
+
+  // ─── Sidebar list ─────────────────────────────────────────────────────────
   function renderList() {
     roomList.innerHTML = '';
     rooms.forEach(room => {
@@ -167,7 +324,7 @@
       li.dataset.id = room.id;
 
       const dot = document.createElement('span');
-      dot.className = 'w-2 h-2 rounded-full bg-indigo-400 flex-shrink-0';
+      dot.className = `w-2 h-2 inline-block rounded-${room.shape === 'polygon' ? 'none rotate-45' : 'full'} bg-indigo-400 flex-shrink-0`;
       li.appendChild(dot);
 
       const name = document.createElement('span');
@@ -199,7 +356,7 @@
     scheduleSave();
   }
 
-  // ─── Rename (inline) ──────────────────────────────────────────────────────
+  // ─── Rename (rectangle rooms only; polygon rooms use prompt) ──────────────
   function startRename(id, labelEl) {
     const room = rooms.find(r => r.id === id);
     if (!room) return;
@@ -227,12 +384,61 @@
     });
   }
 
+  // ─── Rename (polygon rooms — inline overlay input) ────────────────────────
+  function startPolygonRename(id, svgTextEl, centroid) {
+    const room = rooms.find(r => r.id === id);
+    if (!room) return;
+
+    // Overlay an HTML input at the centroid position
+    const inputWrap = document.createElement('div');
+    inputWrap.className = 'poly-overlay absolute z-20';
+    inputWrap.style.cssText = `left:${centroid.x}%;top:${centroid.y}%;transform:translate(-50%,-50%);`;
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = room.name;
+    input.className = 'text-xs font-medium border border-indigo-400 rounded px-1 bg-white outline-none shadow';
+    input.style.minWidth = '80px';
+
+    inputWrap.appendChild(input);
+    overlay.appendChild(inputWrap);
+    input.focus();
+    input.select();
+
+    let committed = false;
+
+    const commit = () => {
+      if (committed) return;
+      committed = true;
+      const val = input.value.trim();
+      if (val) { room.name = val; scheduleSave(); }
+      inputWrap.remove();
+      render();
+    };
+
+    const cancel = () => {
+      if (committed) return;
+      committed = true;
+      inputWrap.remove();
+      render();
+    };
+
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); commit(); }
+      if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    });
+  }
+
   // ─── Name prompt (after drawing) ──────────────────────────────────────────
   function showNamePrompt(room) {
-    // Show inline input at the room position
+    const pos = room.shape === 'polygon'
+      ? computeCentroid(room.vertices)
+      : { x: room.x, y: room.y };
+
     const prompt = document.createElement('div');
     prompt.className = 'absolute z-20 bg-white rounded-lg shadow-lg border border-indigo-200 p-2 flex gap-1 items-center';
-    prompt.style.cssText = `left:${room.x}%;top:${room.y}%;transform:translateY(-110%);`;
+    prompt.style.cssText = `left:${pos.x}%;top:${pos.y}%;transform:translateY(-110%);`;
 
     const input = document.createElement('input');
     input.type = 'text';
@@ -262,12 +468,10 @@
         scheduleSave();
       }
       prompt.remove();
-      if (!val) render(); // remove preview
-      else render();
+      render();
     };
 
     let cancelled = false;
-
     const cancel = () => {
       cancelled = true;
       prompt.remove();
@@ -279,14 +483,12 @@
       if (e.key === 'Enter') { e.preventDefault(); commit(); }
       if (e.key === 'Escape') cancel();
     });
-    input.addEventListener('blur', e => {
-      setTimeout(() => {
-        if (!committed && !cancelled) commit();
-      }, 150);
+    input.addEventListener('blur', () => {
+      setTimeout(() => { if (!committed && !cancelled) commit(); }, 150);
     });
   }
 
-  // ─── Drawing ──────────────────────────────────────────────────────────────
+  // ─── Rectangle drawing ────────────────────────────────────────────────────
   let previewEl = null;
 
   function startDraw(e) {
@@ -311,8 +513,8 @@
     const y = Math.min(drawStartPct.y, cur.y);
     const w = Math.abs(cur.x - drawStartPct.x);
     const h = Math.abs(cur.y - drawStartPct.y);
-    previewEl.style.left = x + '%';
-    previewEl.style.top  = y + '%';
+    previewEl.style.left   = x + '%';
+    previewEl.style.top    = y + '%';
     previewEl.style.width  = w + '%';
     previewEl.style.height = h + '%';
   }
@@ -327,23 +529,144 @@
     const h = Math.abs(cur.y - drawStartPct.y);
 
     if (previewEl) { previewEl.remove(); previewEl = null; }
-
-    // Ignore tiny accidental drags
     if (w < 1 || h < 1) return;
 
-    const room = { id: nextId++, name: '', x: +x.toFixed(4), y: +y.toFixed(4), width: +w.toFixed(4), height: +h.toFixed(4) };
-
-    // Show name prompt (don't push to rooms yet — commit on confirm)
+    const room = { id: nextId++, name: '', shape: 'rectangle', x: +x.toFixed(4), y: +y.toFixed(4), width: +w.toFixed(4), height: +h.toFixed(4) };
     showNamePrompt(room);
   }
 
-  // ─── Move ─────────────────────────────────────────────────────────────────
+  // ─── Polygon drawing ──────────────────────────────────────────────────────
+  function addPolygonVertex(pt) {
+    if (!isDrawingPolygon) {
+      isDrawingPolygon = true;
+      polygonVertices = [pt];
+      updatePolygonPreview();
+      return;
+    }
+
+    // Close polygon if clicking near first vertex (within ~3%)
+    if (polygonVertices.length >= 3) {
+      const first = polygonVertices[0];
+      const dx = pt.x - first.x;
+      const dy = pt.y - first.y;
+      if (Math.sqrt(dx * dx + dy * dy) < 3) {
+        closePolygon();
+        return;
+      }
+    }
+
+    polygonVertices.push(pt);
+    updatePolygonPreview();
+  }
+
+  function closePolygon() {
+    if (polygonVertices.length < 3) { cancelPolygon(); return; }
+
+    const vertices = polygonVertices.map(v => ({ x: +v.x.toFixed(4), y: +v.y.toFixed(4) }));
+    isDrawingPolygon = false;
+    polygonVertices = [];
+    polygonPreviewMouse = null;
+    updatePolygonPreview();
+
+    const xs = vertices.map(v => v.x);
+    const ys = vertices.map(v => v.y);
+    const room = {
+      id: nextId++,
+      name: '',
+      shape: 'polygon',
+      vertices,
+      x: +Math.min(...xs).toFixed(4),
+      y: +Math.min(...ys).toFixed(4),
+      width:  +(Math.max(...xs) - Math.min(...xs)).toFixed(4),
+      height: +(Math.max(...ys) - Math.min(...ys)).toFixed(4),
+    };
+
+    showNamePrompt(room);
+  }
+
+  function cancelPolygon() {
+    isDrawingPolygon = false;
+    polygonVertices = [];
+    polygonPreviewMouse = null;
+    updatePolygonPreview();
+  }
+
+  function updatePolygonPreview() {
+    svg.querySelectorAll('.poly-preview').forEach(el => el.remove());
+    if (!isDrawingPolygon || polygonVertices.length === 0) return;
+
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.classList.add('poly-preview');
+    g.style.pointerEvents = 'none';
+
+    // Filled preview polygon (if ≥3 vertices)
+    if (polygonVertices.length >= 3) {
+      const allPts = polygonPreviewMouse
+        ? [...polygonVertices, polygonPreviewMouse]
+        : polygonVertices;
+      const previewPoly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+      previewPoly.setAttribute('points', allPts.map(v => `${v.x},${v.y}`).join(' '));
+      previewPoly.setAttribute('fill', 'rgba(79,70,229,0.1)');
+      previewPoly.setAttribute('stroke', 'none');
+      g.appendChild(previewPoly);
+    }
+
+    // Polyline connecting existing vertices
+    if (polygonVertices.length >= 2) {
+      const pl = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+      pl.setAttribute('points', polygonVertices.map(v => `${v.x},${v.y}`).join(' '));
+      pl.setAttribute('fill', 'none');
+      pl.setAttribute('stroke', 'rgba(79,70,229,0.8)');
+      pl.setAttribute('stroke-width', '0.4');
+      g.appendChild(pl);
+    }
+
+    // Dashed line from last vertex to cursor
+    if (polygonPreviewMouse && polygonVertices.length >= 1) {
+      const last = polygonVertices[polygonVertices.length - 1];
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', last.x);
+      line.setAttribute('y1', last.y);
+      line.setAttribute('x2', polygonPreviewMouse.x);
+      line.setAttribute('y2', polygonPreviewMouse.y);
+      line.setAttribute('stroke', 'rgba(79,70,229,0.5)');
+      line.setAttribute('stroke-width', '0.3');
+      line.setAttribute('stroke-dasharray', '1,1');
+      g.appendChild(line);
+    }
+
+    // Vertex dots
+    polygonVertices.forEach((v, i) => {
+      const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      c.setAttribute('cx', v.x);
+      c.setAttribute('cy', v.y);
+      // First vertex is larger when ≥3 vertices (indicates "close here")
+      const isFirst = i === 0;
+      const canClose = polygonVertices.length >= 3;
+      c.setAttribute('r', isFirst && canClose ? '1.8' : '0.8');
+      c.setAttribute('fill', isFirst ? '#4f46e5' : 'white');
+      c.setAttribute('stroke', '#4f46e5');
+      c.setAttribute('stroke-width', '0.3');
+      g.appendChild(c);
+    });
+
+    svg.appendChild(g);
+  }
+
+  // ─── Move (rectangle) ─────────────────────────────────────────────────────
   function startMove(e, room) {
     const startPct = clientToPct(e.clientX, e.clientY);
+    dragState = { type: 'move', startPct, startRoom: { ...room } };
+  }
+
+  // ─── Move (polygon) ───────────────────────────────────────────────────────
+  function startMovePolygon(e, room) {
+    const startPct = clientToPct(e.clientX, e.clientY);
     dragState = {
-      type: 'move',
+      type: 'move-polygon',
       startPct,
-      startRoom: { ...room },
+      startVertices: room.vertices.map(v => ({ ...v })),
+      roomId: room.id,
     };
   }
 
@@ -352,6 +675,30 @@
     const cur = clientToPct(e.clientX, e.clientY);
     const dx = cur.x - dragState.startPct.x;
     const dy = cur.y - dragState.startPct.y;
+
+    if (dragState.type === 'move-polygon') {
+      const room = rooms.find(r => r.id === dragState.roomId);
+      if (!room) return;
+      room.vertices = dragState.startVertices.map(v => ({
+        x: Math.max(0, Math.min(100, v.x + dx)),
+        y: Math.max(0, Math.min(100, v.y + dy)),
+      }));
+      const xs = room.vertices.map(v => v.x);
+      const ys = room.vertices.map(v => v.y);
+      room.x = Math.min(...xs);
+      room.y = Math.min(...ys);
+      room.width  = Math.max(...xs) - room.x;
+      room.height = Math.max(...ys) - room.y;
+
+      // Live-update SVG polygon
+      const g = svg.querySelector(`.poly-room[data-id="${room.id}"]`);
+      if (g) {
+        const p = g.querySelector('polygon');
+        if (p) p.setAttribute('points', room.vertices.map(v => `${v.x},${v.y}`).join(' '));
+      }
+      return;
+    }
+
     const room = rooms.find(r => r.id === selected);
     if (!room) return;
 
@@ -362,7 +709,6 @@
       applyResize(room, dragState.handle, dragState.startRoom, dx, dy);
     }
 
-    // Live update position of the DOM element for performance
     const el = overlay.querySelector(`.room-rect[data-id="${selected}"]`);
     if (el) {
       el.style.left   = room.x + '%';
@@ -379,7 +725,7 @@
     scheduleSave();
   }
 
-  // ─── Resize ───────────────────────────────────────────────────────────────
+  // ─── Resize (rectangle) ───────────────────────────────────────────────────
   function startResize(e, room, handle) {
     const startPct = clientToPct(e.clientX, e.clientY);
     dragState = { type: 'resize', handle, startPct, startRoom: { ...room } };
@@ -410,39 +756,73 @@
 
   // ─── Event wiring ─────────────────────────────────────────────────────────
   overlay.addEventListener('mousedown', e => {
+    if (drawMode === 'polygon') {
+      // Only add vertex when clicking the overlay background (not existing rooms)
+      if (e.target === overlay) {
+        addPolygonVertex(clientToPct(e.clientX, e.clientY));
+      }
+      return;
+    }
     if (e.target === overlay) {
       deselectAll();
       startDraw(e);
     }
   });
 
+  // dblclick closes polygon; two mousedown events fired before dblclick, adding 2 unwanted vertices
+  overlay.addEventListener('dblclick', e => {
+    if (drawMode !== 'polygon' || !isDrawingPolygon) return;
+    if (polygonVertices.length > 0) polygonVertices.pop();
+    if (polygonVertices.length > 0) polygonVertices.pop();
+    closePolygon();
+  });
+
   document.addEventListener('mousemove', e => {
-    updateDraw(e);
+    if (drawMode === 'rectangle') {
+      updateDraw(e);
+    } else if (isDrawingPolygon) {
+      polygonPreviewMouse = clientToPct(e.clientX, e.clientY);
+      updatePolygonPreview();
+    }
     onMove(e);
   });
 
   document.addEventListener('mouseup', e => {
-    if (isDrawing) endDraw(e);
+    if (drawMode === 'rectangle' && isDrawing) endDraw(e);
     endMove();
   });
 
   document.addEventListener('keydown', e => {
     if ((e.key === 'Delete' || e.key === 'Backspace') && selected !== null) {
-      // Only if not in an input
       if (document.activeElement.tagName === 'INPUT') return;
       deleteRoom(selected);
     }
-    if (e.key === 'Escape') deselectAll();
+    if (e.key === 'Escape') {
+      if (isDrawingPolygon) {
+        cancelPolygon();
+      } else {
+        deselectAll();
+      }
+    }
   });
 
   // ─── Init ─────────────────────────────────────────────────────────────────
   function init() {
     (window.INITIAL_ROOMS || []).forEach(r => {
-      rooms.push({ id: nextId++, name: r.name, x: +r.x, y: +r.y, width: +r.width, height: +r.height });
+      if (r.vertices && Array.isArray(r.vertices) && r.vertices.length >= 3) {
+        rooms.push({
+          id: nextId++,
+          name: r.name,
+          shape: 'polygon',
+          vertices: r.vertices,
+          x: +r.x, y: +r.y, width: +r.width, height: +r.height,
+        });
+      } else {
+        rooms.push({ id: nextId++, name: r.name, shape: 'rectangle', x: +r.x, y: +r.y, width: +r.width, height: +r.height });
+      }
     });
     render();
   }
 
-  // Wait for image to load so dimensions are known
   if (img.complete) { init(); } else { img.addEventListener('load', init); }
 })();
