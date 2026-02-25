@@ -31,7 +31,7 @@
     <div id="canvasWrap" class="relative select-none shadow-lg" style="max-width:100%;max-height:100%">
       <img
         id="floorplanImg"
-        src="{{ $floorplan->thumbnailUrl() }}"
+        src="{{ $floorplan->thumbnail_url }}"
         alt="{{ $floorplan->name }}"
         class="block max-w-full max-h-full"
         style="max-height: calc(100vh - 130px)"

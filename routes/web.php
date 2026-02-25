@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api;
+use App\Http\Controllers\Api\DesignStateController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\DashboardController;
@@ -39,4 +40,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/designs/{design}', [DesignController::class, 'show'])->name('designs.show');
     Route::patch('/designs/{design}', [DesignController::class, 'update'])->name('designs.update');
     Route::delete('/designs/{design}', [DesignController::class, 'destroy'])->name('designs.destroy');
+
+    // Phase 5 — Design canvas API
+    Route::get('/api/designs/{design}/state',      [DesignStateController::class, 'show'])->name('api.designs.state');
+    Route::put('/api/designs/{design}/key-entries', [DesignStateController::class, 'syncKeyEntries'])->name('api.designs.key-entries');
+    Route::put('/api/designs/{design}/highlights',  [DesignStateController::class, 'syncHighlights'])->name('api.designs.highlights');
 });

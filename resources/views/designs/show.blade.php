@@ -1,9 +1,84 @@
 @extends('layouts.app')
 @section('title', $design->name)
 @section('content')
-<div class="max-w-2xl mx-auto text-center py-20">
-    <h1 class="text-2xl font-bold text-gray-900 mb-2">{{ $design->name }}</h1>
-    <p class="text-sm text-gray-500 mb-6">Design canvas coming in Phase 5.</p>
-    <a href="{{ route('dashboard') }}" class="text-indigo-600 text-sm hover:underline">← Back to Dashboard</a>
+<div class="flex gap-0 -mx-4 sm:-mx-6 lg:-mx-8 -my-8" style="height:calc(100vh - 64px)">
+
+  {{-- Key sidebar --}}
+  <aside class="w-64 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col">
+    <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+      <div>
+        <h2 class="text-sm font-semibold text-gray-900">Key</h2>
+        <p class="text-xs text-gray-400 mt-0.5">{{ $design->name }}</p>
+      </div>
+      <a href="{{ route('dashboard') }}" class="text-xs text-gray-400 hover:text-gray-600">← Back</a>
+    </div>
+
+    {{-- Key entries list --}}
+    <div class="flex-1 overflow-y-auto">
+      <ul id="keyList" class="divide-y divide-gray-100 text-sm"></ul>
+      <div class="px-4 py-2">
+        <p id="keyLimitNote" class="text-xs text-amber-600 hidden">Maximum 20 entries reached.</p>
+      </div>
+    </div>
+
+    {{-- Add entry form --}}
+    <div class="border-t border-gray-200 p-4">
+      <div id="addEntryForm" class="hidden space-y-2">
+        <div class="flex items-center gap-2">
+          <input type="color" id="entryColor" value="#6366f1"
+            class="w-8 h-8 rounded border border-gray-300 cursor-pointer p-0.5">
+          <input type="text" id="entryLabel" placeholder="Label" maxlength="100"
+            class="flex-1 text-sm border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+        </div>
+        <div class="flex gap-2">
+          <button id="saveEntryBtn" class="flex-1 text-xs py-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700">Add</button>
+          <button id="cancelEntryBtn" type="button" class="flex-1 text-xs py-1.5 bg-white border border-gray-300 text-gray-700 rounded hover:bg-gray-50">Cancel</button>
+        </div>
+      </div>
+      <button id="addEntryBtn"
+        class="w-full text-xs py-2 bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 transition-colors flex items-center justify-center gap-1">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+        Add Entry
+      </button>
+    </div>
+
+    {{-- Status --}}
+    <div class="px-4 py-2 border-t border-gray-100">
+      <p id="saveStatus" class="text-xs text-gray-400">All changes saved</p>
+    </div>
+  </aside>
+
+  {{-- Canvas area --}}
+  <main class="flex-1 overflow-hidden bg-gray-100 relative" id="canvasArea">
+    <div id="canvasViewport" class="w-full h-full overflow-hidden relative cursor-grab active:cursor-grabbing">
+      <div id="canvasContent" class="absolute flex items-start gap-8 p-8" style="transform-origin:top left">
+        {{-- Floorplan columns rendered by JS --}}
+      </div>
+    </div>
+    {{-- Zoom controls --}}
+    <div class="absolute bottom-4 right-4 flex flex-col gap-1 z-10">
+      <button id="zoomIn"  class="w-8 h-8 bg-white rounded-lg shadow border border-gray-200 text-gray-600 text-lg flex items-center justify-center hover:bg-gray-50">+</button>
+      <button id="zoomOut" class="w-8 h-8 bg-white rounded-lg shadow border border-gray-200 text-gray-600 text-lg flex items-center justify-center hover:bg-gray-50">−</button>
+      <button id="zoomReset" class="w-8 h-8 bg-white rounded-lg shadow border border-gray-200 text-xs text-gray-600 flex items-center justify-center hover:bg-gray-50">1:1</button>
+    </div>
+    {{-- Paint mode indicator --}}
+    <div id="paintBadge" class="absolute top-3 left-3 hidden items-center gap-2 bg-white rounded-lg shadow px-3 py-1.5 border border-indigo-200 z-10">
+      <span class="w-3 h-3 rounded-full" id="paintBadgeColor"></span>
+      <span class="text-xs font-medium text-indigo-700" id="paintBadgeLabel"></span>
+      <span class="text-xs text-gray-400">· click room to paint · Esc to exit</span>
+    </div>
+  </main>
 </div>
 @endsection
+
+@push('scripts')
+<script>
+window.DESIGN_ID   = {{ (int) $design->id }};
+window.DESIGN_NAME = {!! json_encode($design->name, JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) !!};
+window.STATE_URL   = '{{ route('api.designs.state', $design) }}';
+window.KEY_URL     = '{{ route('api.designs.key-entries', $design) }}';
+window.HL_URL      = '{{ route('api.designs.highlights', $design) }}';
+window.CSRF_TOKEN  = '{{ csrf_token() }}';
+</script>
+@vite('resources/js/design.js')
+@endpush

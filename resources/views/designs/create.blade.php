@@ -38,7 +38,7 @@
                             <input type="checkbox" name="floorplan_ids[]" value="{{ $fp->id }}"
                                 {{ in_array($fp->id, old('floorplan_ids', [])) ? 'checked' : '' }}
                                 class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
-                            <img src="{{ $fp->thumbnailUrl() }}" alt="{{ $fp->name }}"
+                            <img src="{{ $fp->thumbnail_url }}" alt="{{ $fp->name }}"
                                 class="w-16 h-10 object-cover rounded border border-gray-200 bg-gray-100">
                             <div>
                                 <p class="text-sm font-medium text-gray-900">{{ $fp->name }}</p>

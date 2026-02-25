@@ -15,6 +15,8 @@ class Floorplan extends Model
 
     protected $fillable = ['user_id', 'name', 'image_path', 'width_px', 'height_px'];
 
+    protected $appends = ['thumbnail_url'];
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
@@ -30,7 +32,7 @@ class Floorplan extends Model
         return $this->belongsToMany(Design::class, 'design_floorplans');
     }
 
-    public function thumbnailUrl(): string
+    public function getThumbnailUrlAttribute(): string
     {
         return Storage::disk('public')->url($this->image_path);
     }

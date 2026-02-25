@@ -36,7 +36,7 @@
                 {{-- Thumbnail --}}
                 <div class="aspect-video bg-gray-100 overflow-hidden">
                     <img
-                        src="{{ $floorplan->thumbnailUrl() }}"
+                        src="{{ $floorplan->thumbnail_url }}"
                         alt="{{ $floorplan->name }}"
                         class="w-full h-full object-cover"
                         onerror="this.style.display='none'"
