@@ -34,7 +34,7 @@ class Floorplan extends Model
 
     public function getThumbnailUrlAttribute(): string
     {
-        return '/storage/' . $this->image_path;
+        return Storage::disk('public')->url($this->image_path);
     }
 
     public function deleteImage(): void
