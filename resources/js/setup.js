@@ -246,17 +246,18 @@
 
     // Vertex dots when selected
     if (isSelected) {
-      room.vertices.forEach(v => {
-        const vc = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-        vc.setAttribute('cx', v.x);
-        vc.setAttribute('cy', v.y);
-        vc.setAttribute('r', '1');
-        vc.setAttribute('fill', 'white');
-        vc.setAttribute('stroke', '#4f46e5');
-        vc.setAttribute('stroke-width', '1.5');
-        vc.setAttribute('vector-effect', 'non-scaling-stroke');
-        vc.style.pointerEvents = 'none';
-        g.appendChild(vc);
+      room.vertices.forEach((v, idx) => {
+        const dot = document.createElement('div');
+        dot.className = 'poly-overlay poly-dot absolute w-3 h-3 bg-white border-2 border-indigo-600 rounded-full shadow-sm';
+        dot.style.left = `calc(${v.x}% - 6px)`;
+        dot.style.top = `calc(${v.y}% - 6px)`;
+        dot.style.cursor = 'move';
+        dot.dataset.index = idx;
+        dot.addEventListener('mousedown', e => {
+          e.stopPropagation();
+          startMovePolygonVertex(e, room, idx);
+        });
+        overlay.appendChild(dot);
       });
     }
 
@@ -566,6 +567,7 @@
 
   function updatePolygonPreview() {
     svg.querySelectorAll('.poly-preview').forEach(el => el.remove());
+    overlay.querySelectorAll('.poly-preview-dot').forEach(el => el.remove());
     if (!isDrawingPolygon || polygonVertices.length === 0) return;
 
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -608,22 +610,22 @@
       g.appendChild(line);
     }
 
+    svg.appendChild(g);
+
     // Vertex dots
     polygonVertices.forEach((v, i) => {
-      const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      c.setAttribute('cx', v.x);
-      c.setAttribute('cy', v.y);
-      // First vertex is larger when ≥3 vertices (indicates "close here")
+      const dot = document.createElement('div');
+      dot.className = 'poly-preview-dot absolute rounded-full bg-white border-2 border-indigo-600 shadow-sm pointer-events-none';
       const isFirst = i === 0;
       const canClose = polygonVertices.length >= 3;
-      c.setAttribute('r', isFirst && canClose ? '1.8' : '0.8');
-      c.setAttribute('fill', isFirst ? '#4f46e5' : 'white');
-      c.setAttribute('stroke', '#4f46e5');
-      c.setAttribute('stroke-width', '0.3');
-      g.appendChild(c);
+      const size = isFirst && canClose ? 14 : 10;
+      dot.style.width = `${size}px`;
+      dot.style.height = `${size}px`;
+      dot.style.left = `calc(${v.x}% - ${size/2}px)`;
+      dot.style.top = `calc(${v.y}% - ${size/2}px)`;
+      if (isFirst) dot.style.backgroundColor = '#4f46e5';
+      overlay.appendChild(dot);
     });
-
-    svg.appendChild(g);
   }
 
   // ─── Move (rectangle) ─────────────────────────────────────────────────────
@@ -639,6 +641,17 @@
       type: 'move-polygon',
       startPct,
       startVertices: room.vertices.map(v => ({ ...v })),
+      roomId: room.id,
+    };
+  }
+
+  function startMovePolygonVertex(e, room, vertexIndex) {
+    const startPct = clientToPct(e.clientX, e.clientY);
+    dragState = {
+      type: 'move-polygon-vertex',
+      startPct,
+      startVertex: { ...room.vertices[vertexIndex] },
+      vertexIndex,
       roomId: room.id,
     };
   }
@@ -669,6 +682,49 @@
         const p = g.querySelector('polygon');
         if (p) p.setAttribute('points', room.vertices.map(v => `${v.x},${v.y}`).join(' '));
       }
+
+      // Live-update vertex HTML dots if they exist
+      const dots = overlay.querySelectorAll('.poly-dot');
+      dots.forEach((dot, idx) => {
+        if (room.vertices[idx]) {
+          dot.style.left = `calc(${room.vertices[idx].x}% - 6px)`;
+          dot.style.top = `calc(${room.vertices[idx].y}% - 6px)`;
+        }
+      });
+      return;
+    }
+
+    if (dragState.type === 'move-polygon-vertex') {
+      const room = rooms.find(r => r.id === dragState.roomId);
+      if (!room) return;
+      const vIdx = dragState.vertexIndex;
+      room.vertices[vIdx] = {
+        x: Math.max(0, Math.min(100, dragState.startVertex.x + dx)),
+        y: Math.max(0, Math.min(100, dragState.startVertex.y + dy)),
+      };
+      
+      const xs = room.vertices.map(v => v.x);
+      const ys = room.vertices.map(v => v.y);
+      room.x = Math.min(...xs);
+      room.y = Math.min(...ys);
+      room.width  = Math.max(...xs) - room.x;
+      room.height = Math.max(...ys) - room.y;
+
+      // Live-update SVG polygon
+      const g = svg.querySelector(`.poly-room[data-id="${room.id}"]`);
+      if (g) {
+        const p = g.querySelector('polygon');
+        if (p) p.setAttribute('points', room.vertices.map(v => `${v.x},${v.y}`).join(' '));
+      }
+
+      // Live-update vertex HTML dot
+      const dots = overlay.querySelectorAll('.poly-dot');
+      dots.forEach(dot => {
+        if (parseInt(dot.dataset.index, 10) === vIdx) {
+          dot.style.left = `calc(${room.vertices[vIdx].x}% - 6px)`;
+          dot.style.top = `calc(${room.vertices[vIdx].y}% - 6px)`;
+        }
+      });
       return;
     }
 
