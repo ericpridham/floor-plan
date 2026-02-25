@@ -182,6 +182,7 @@
 
     label.style.pointerEvents = 'auto';
     label.style.cursor = 'text';
+    label.addEventListener('mousedown', e => { e.stopPropagation(); selectRoom(room.id); });
     label.addEventListener('dblclick', e => { e.stopPropagation(); startRename(room.id, label); });
 
     el.addEventListener('mousedown', e => {
@@ -339,6 +340,7 @@
 
   // ─── Selection ────────────────────────────────────────────────────────────
   function selectRoom(id) {
+    if (selected === id) return;
     selected = id;
     render();
   }
@@ -402,8 +404,7 @@
 
     inputWrap.appendChild(input);
     overlay.appendChild(inputWrap);
-    input.focus();
-    input.select();
+    setTimeout(() => { input.focus(); input.select(); }, 0);
 
     let committed = false;
 
@@ -444,7 +445,6 @@
     input.type = 'text';
     input.placeholder = 'Room name';
     input.className = 'text-sm border border-gray-300 rounded px-2 py-1 outline-none focus:border-indigo-500 w-36';
-    input.autofocus = true;
 
     const btn = document.createElement('button');
     btn.textContent = '✓';
@@ -453,7 +453,7 @@
     prompt.appendChild(input);
     prompt.appendChild(btn);
     overlay.appendChild(prompt);
-    input.focus();
+    setTimeout(() => input.focus(), 0);
 
     let committed = false;
 
