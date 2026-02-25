@@ -1,9 +1,11 @@
 <?php
 
+use App\Http\Controllers\Api;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FloorplanController;
+use App\Http\Controllers\FloorplanSetupController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn() => redirect()->route('dashboard'));
@@ -24,4 +26,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/floorplans', [FloorplanController::class, 'store'])->name('floorplans.store');
     Route::patch('/floorplans/{floorplan}', [FloorplanController::class, 'update'])->name('floorplans.update');
     Route::delete('/floorplans/{floorplan}', [FloorplanController::class, 'destroy'])->name('floorplans.destroy');
+
+    // Phase 3
+    Route::get('/floorplans/{floorplan}/setup', [FloorplanSetupController::class, 'show'])->name('floorplans.setup');
+    Route::get('/api/floorplans/{floorplan}/rooms', [Api\RoomSyncController::class, 'index'])->name('api.rooms.index');
+    Route::put('/api/floorplans/{floorplan}/rooms', [Api\RoomSyncController::class, 'sync'])->name('api.rooms.sync');
 });

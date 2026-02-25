@@ -53,10 +53,7 @@
 
                     {{-- Actions --}}
                     <div class="mt-3 pt-3 border-t border-gray-100 flex items-center gap-2">
-                        <span
-                            class="text-xs px-2.5 py-1.5 bg-gray-100 text-gray-400 rounded-md cursor-not-allowed"
-                            title="Room setup available in the next phase"
-                        >Setup</span>
+                        <a href="{{ route('floorplans.setup', $floorplan) }}" class="text-xs px-2.5 py-1.5 bg-indigo-50 text-indigo-700 rounded-md hover:bg-indigo-100 transition-colors">Setup</a>
 
                         <button
                             type="button"
