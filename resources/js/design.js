@@ -201,7 +201,7 @@
 
   function makeRoomEl(room, fpId) {
     const el = document.createElement('div');
-    el.className = 'absolute box-border';
+    el.className = 'absolute box-border hover:bg-gray-400/50 transition-colors';
     el.dataset.roomId = room.id;
     el.style.cssText = `left:${room.x}%;top:${room.y}%;width:${room.width}%;height:${room.height}%;`;
 
