@@ -17,7 +17,7 @@ class IconStateController extends Controller
             ->orderBy('label')
             ->get()
             ->map(fn(IconLibrary $icon) => array_merge($icon->toArray(), [
-                'url' => asset($icon->svg_path),
+                'url' => url($icon->svg_path),
             ]));
 
         $custom = IconLibrary::where('user_id', Auth::id())
