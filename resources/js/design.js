@@ -165,8 +165,10 @@
       const wrap = document.createElement('div');
       wrap.className = 'relative';
       wrap.style.width = '600px'; // fixed display width; aspect maintained by image
+      wrap.dataset.fpWrap = fp.id;
 
       const img = document.createElement('img');
+      img.crossOrigin = 'anonymous';
       img.src = fp.thumbnail_url || fp.image_path;
       img.alt = fp.name;
       img.className = 'block w-full h-auto rounded shadow select-none';
@@ -474,6 +476,7 @@
       exitPaintMode();
       exitIconPlacementMode();
       if (zContextMenu) { zContextMenu.remove(); zContextMenu = null; }
+      closeExportModal();
     }
     if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
       e.preventDefault();
@@ -567,6 +570,7 @@
       btn.dataset.iconId = icon.id;
 
       const img = document.createElement('img');
+      img.crossOrigin = 'anonymous';
       img.src = icon.url;
       img.alt = icon.label;
       img.className = 'w-8 h-8 object-contain';
@@ -653,6 +657,7 @@
       `;
 
       const img = document.createElement('img');
+      img.crossOrigin = 'anonymous';
       img.src = iconData.url;
       img.alt = iconData.label;
       img.style.cssText = 'width:100%;height:100%;object-fit:contain;pointer-events:none;user-select:none;';
@@ -905,6 +910,320 @@
   });
 
   document.getElementById('iconSearch')?.addEventListener('input', renderIconPanel);
+
+  // ─── PNG Export ───────────────────────────────────────────────────────────
+
+  function slugify(str) {
+    return str.toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .trim()
+      .replace(/^-+|-+$/g, '');
+  }
+
+  function defaultExportFilename() {
+    const today = new Date();
+    const dateStr = today.getFullYear() + '-' +
+      String(today.getMonth() + 1).padStart(2, '0') + '-' +
+      String(today.getDate()).padStart(2, '0');
+    return (slugify(window.DESIGN_NAME) || 'design') + '-' + dateStr + '.png';
+  }
+
+  function loadImageWithCors(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('Failed to load: ' + src));
+      img.src = src;
+    });
+  }
+
+  async function performExport() {
+    const exportBtn    = document.getElementById('exportModalConfirm');
+    const progressEl   = document.getElementById('exportProgress');
+    const modalBtns    = document.getElementById('exportModalBtns');
+
+    exportBtn.disabled = true;
+    modalBtns.classList.add('opacity-50');
+    progressEl.classList.remove('hidden');
+
+    let exportFailed = false;
+
+    try {
+      // ── Dimensions ────────────────────────────────────────────────────────
+      const naturalW = canvasContent.offsetWidth;
+      const naturalH = canvasContent.offsetHeight;
+      const LEGEND_NATURAL = 280; // legend panel width at 1x
+      const MIN_W = 1200, MAX_W = 4000;
+      let canvasExportW = Math.max(MIN_W, Math.min(MAX_W, naturalW * 2));
+      const ratio = canvasExportW / naturalW;
+      const canvasExportH = Math.round(naturalH * ratio);
+      const legendW = Math.round(LEGEND_NATURAL * ratio);
+      const totalW = canvasExportW + legendW;
+
+      // ── Collect floorplan positions & images ──────────────────────────────
+      const fpWrapMap = {}; // fpId → { el, img, rect }
+      canvasContent.querySelectorAll('[data-fp-wrap]').forEach(wrapEl => {
+        const fpId = parseInt(wrapEl.dataset.fpWrap);
+        const fp = floorplans.find(f => f.id === fpId);
+        if (!fp) return;
+        fpWrapMap[fpId] = { el: wrapEl, fp };
+      });
+
+      // Load all floorplan images
+      const fpImagePromises = Object.entries(fpWrapMap).map(async ([fpId, data]) => {
+        const imgEl = data.el.querySelector('img');
+        const src = imgEl ? imgEl.src : (data.fp.thumbnail_url || data.fp.image_path);
+        try {
+          data.image = await loadImageWithCors(src);
+        } catch {
+          data.image = null;
+        }
+      });
+
+      // Load all unique placed icon images
+      const usedIconIds = [...new Set(placedIcons.map(i => i.icon_library_id))];
+      const iconImageMap = {};
+      const iconImagePromises = usedIconIds.map(async id => {
+        const iconData = [...allIcons.built_in, ...allIcons.custom].find(i => i.id === id);
+        if (!iconData) return;
+        try {
+          iconImageMap[id] = await loadImageWithCors(iconData.url);
+          iconImageMap[id + '__data'] = iconData;
+        } catch {
+          // skip failed icons
+        }
+      });
+
+      await Promise.all([...fpImagePromises, ...iconImagePromises]);
+
+      // ── Create canvas ─────────────────────────────────────────────────────
+      const canvas = document.createElement('canvas');
+      canvas.width  = totalW;
+      canvas.height = canvasExportH;
+      const ctx = canvas.getContext('2d');
+
+      // White background
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, totalW, canvasExportH);
+
+      // ── Draw canvas region ────────────────────────────────────────────────
+      // Clip to canvas region
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, canvasExportW, canvasExportH);
+      ctx.clip();
+
+      // Gray background for canvas area
+      ctx.fillStyle = '#f3f4f6';
+      ctx.fillRect(0, 0, canvasExportW, canvasExportH);
+
+      const contentRect = canvasContent.getBoundingClientRect();
+
+      // Draw floorplan images + room highlights
+      Object.entries(fpWrapMap).forEach(([fpId, data]) => {
+        if (!data.image) return;
+        const wrapRect = data.el.getBoundingClientRect();
+        // Convert to natural canvasContent-relative coordinates
+        const natX = (wrapRect.left - contentRect.left) / scale;
+        const natY = (wrapRect.top  - contentRect.top)  / scale;
+        const natW = data.el.offsetWidth;
+        const natH = data.el.offsetHeight;
+
+        const ex = Math.round(natX * ratio);
+        const ey = Math.round(natY * ratio);
+        const ew = Math.round(natW * ratio);
+        const eh = Math.round(natH * ratio);
+
+        // Draw floorplan image
+        ctx.drawImage(data.image, ex, ey, ew, eh);
+
+        // Draw room highlights
+        const fp = data.fp;
+        (fp.rooms || []).forEach(room => {
+          const hlEntryId = highlights[room.id];
+          const entry = hlEntryId ? keyEntries.find(e => e.id === hlEntryId) : null;
+          if (!entry) return;
+
+          const rx = ex + (room.x / 100) * ew;
+          const ry = ey + (room.y / 100) * eh;
+          const rw = (room.width  / 100) * ew;
+          const rh = (room.height / 100) * eh;
+
+          // Semi-transparent fill
+          const r = parseInt(entry.color_hex.slice(1, 3), 16);
+          const g = parseInt(entry.color_hex.slice(3, 5), 16);
+          const b = parseInt(entry.color_hex.slice(5, 7), 16);
+          ctx.fillStyle = `rgba(${r},${g},${b},0.5)`;
+          ctx.fillRect(rx, ry, rw, rh);
+
+          // Border
+          ctx.strokeStyle = entry.color_hex;
+          ctx.lineWidth = Math.max(1, 2 * ratio);
+          ctx.strokeRect(rx, ry, rw, rh);
+        });
+      });
+
+      // Draw placed icons
+      const sortedIcons = [...placedIcons].sort((a, b) => a.z_order - b.z_order);
+      sortedIcons.forEach(icon => {
+        const img = iconImageMap[icon.icon_library_id];
+        if (!img) return;
+        const ex = icon.x * ratio;
+        const ey = icon.y * ratio;
+        const ew = icon.width  * ratio;
+        const eh = icon.height * ratio;
+
+        ctx.save();
+        ctx.translate(ex + ew / 2, ey + eh / 2);
+        ctx.rotate((icon.rotation * Math.PI) / 180);
+        ctx.drawImage(img, -ew / 2, -eh / 2, ew, eh);
+        ctx.restore();
+      });
+
+      ctx.restore(); // end canvas region clip
+
+      // ── Draw legend region ────────────────────────────────────────────────
+      const lx = canvasExportW;
+      const PADDING = Math.round(20 * ratio);
+      const FONT_SCALE = ratio;
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(lx, 0, legendW, canvasExportH);
+
+      // Separator line
+      ctx.strokeStyle = '#e5e7eb';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(lx, 0);
+      ctx.lineTo(lx, canvasExportH);
+      ctx.stroke();
+
+      let curY = PADDING;
+
+      // Title "Key"
+      ctx.fillStyle = '#111827';
+      ctx.font = `bold ${Math.round(16 * FONT_SCALE)}px -apple-system, BlinkMacSystemFont, sans-serif`;
+      ctx.fillText('Key', lx + PADDING, curY + Math.round(16 * FONT_SCALE));
+      curY += Math.round(16 * FONT_SCALE) + PADDING;
+
+      // Key entries
+      if (keyEntries.length > 0) {
+        const SWATCH = Math.round(20 * FONT_SCALE);
+        const ITEM_GAP = Math.round(12 * FONT_SCALE);
+        const FONT_SIZE = Math.round(13 * FONT_SCALE);
+        ctx.font = `${FONT_SIZE}px -apple-system, BlinkMacSystemFont, sans-serif`;
+
+        keyEntries.forEach(entry => {
+          if (curY + SWATCH > canvasExportH - PADDING) return; // overflow guard
+
+          ctx.fillStyle = entry.color_hex;
+          ctx.fillRect(lx + PADDING, curY, SWATCH, SWATCH);
+
+          ctx.fillStyle = '#374151';
+          ctx.fillText(
+            entry.label,
+            lx + PADDING + SWATCH + Math.round(8 * FONT_SCALE),
+            curY + SWATCH * 0.75
+          );
+
+          curY += SWATCH + ITEM_GAP;
+        });
+
+        curY += PADDING;
+      }
+
+      // Icons used section
+      const uniqueIconsUsed = [];
+      const seenIconIds = new Set();
+      placedIcons.forEach(pi => {
+        if (seenIconIds.has(pi.icon_library_id)) return;
+        seenIconIds.add(pi.icon_library_id);
+        const iconData = iconImageMap[pi.icon_library_id + '__data'];
+        const iconImg  = iconImageMap[pi.icon_library_id];
+        if (iconData && iconImg) uniqueIconsUsed.push({ iconData, iconImg });
+      });
+
+      if (uniqueIconsUsed.length > 0) {
+        // Section heading "Icons"
+        ctx.fillStyle = '#6b7280';
+        ctx.font = `bold ${Math.round(11 * FONT_SCALE)}px -apple-system, BlinkMacSystemFont, sans-serif`;
+        ctx.fillText('ICONS', lx + PADDING, curY + Math.round(11 * FONT_SCALE));
+        curY += Math.round(11 * FONT_SCALE) + Math.round(8 * FONT_SCALE);
+
+        const THUMB = Math.round(28 * FONT_SCALE);
+        const ITEM_GAP = Math.round(10 * FONT_SCALE);
+        const FONT_SIZE = Math.round(12 * FONT_SCALE);
+        ctx.font = `${FONT_SIZE}px -apple-system, BlinkMacSystemFont, sans-serif`;
+        ctx.fillStyle = '#374151';
+
+        uniqueIconsUsed.forEach(({ iconData, iconImg }) => {
+          if (curY + THUMB > canvasExportH - PADDING) return;
+          ctx.drawImage(iconImg, lx + PADDING, curY, THUMB, THUMB);
+          ctx.fillStyle = '#374151';
+          ctx.fillText(
+            iconData.label,
+            lx + PADDING + THUMB + Math.round(8 * FONT_SCALE),
+            curY + THUMB * 0.65
+          );
+          curY += THUMB + ITEM_GAP;
+        });
+      }
+
+      // ── Trigger download ──────────────────────────────────────────────────
+      const dataUrl = canvas.toDataURL('image/png');
+      const filename = (document.getElementById('exportFilename').value.trim() || defaultExportFilename());
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = filename.endsWith('.png') ? filename : filename + '.png';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      closeExportModal();
+
+    } catch (err) {
+      exportFailed = true;
+      console.error('Export failed:', err);
+      progressEl.textContent = 'Export failed. Please try again.';
+      progressEl.classList.remove('hidden');
+    } finally {
+      exportBtn.disabled = false;
+      modalBtns.classList.remove('opacity-50');
+      if (!exportFailed) {
+        progressEl.classList.add('hidden');
+      }
+    }
+  }
+
+  function openExportModal() {
+    const modal = document.getElementById('exportModal');
+    document.getElementById('exportFilename').value = defaultExportFilename();
+    const progressEl = document.getElementById('exportProgress');
+    progressEl.classList.add('hidden');
+    progressEl.textContent = 'Generating\u2026';
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    document.getElementById('exportFilename').focus();
+    document.getElementById('exportFilename').select();
+  }
+
+  function closeExportModal() {
+    const modal = document.getElementById('exportModal');
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+  }
+
+  document.getElementById('exportBtn').addEventListener('click', openExportModal);
+  document.getElementById('exportModalCancel').addEventListener('click', closeExportModal);
+  document.getElementById('exportModalOverlay').addEventListener('click', closeExportModal);
+  document.getElementById('exportModalConfirm').addEventListener('click', performExport);
+  document.getElementById('exportFilename').addEventListener('keydown', e => {
+    if (e.key === 'Enter') performExport();
+    if (e.key === 'Escape') closeExportModal();
+  });
 
   // ─── Init ─────────────────────────────────────────────────────────────────
   setupIconUpload();

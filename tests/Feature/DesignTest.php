@@ -160,4 +160,14 @@ class DesignTest extends TestCase
              ->assertOk()
              ->assertSee('My Awesome Design');
     }
+
+    public function test_design_show_has_export_button(): void
+    {
+        $user   = User::factory()->create();
+        $design = Design::create(['user_id' => $user->id, 'name' => 'Export Test Design']);
+        $response = $this->actingAs($user)->withoutVite()->get(route('designs.show', $design));
+        $response->assertOk();
+        $response->assertSee('exportBtn', false);
+        $response->assertSee('Export PNG');
+    }
 }
