@@ -2,12 +2,14 @@
 
 use App\Http\Controllers\Api;
 use App\Http\Controllers\Api\DesignStateController;
+use App\Http\Controllers\Api\IconStateController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DesignController;
 use App\Http\Controllers\FloorplanController;
 use App\Http\Controllers\FloorplanSetupController;
+use App\Http\Controllers\IconController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn() => redirect()->route('dashboard'));
@@ -45,4 +47,10 @@ Route::middleware('auth')->group(function () {
     Route::get('/api/designs/{design}/state',      [DesignStateController::class, 'show'])->name('api.designs.state');
     Route::put('/api/designs/{design}/key-entries', [DesignStateController::class, 'syncKeyEntries'])->name('api.designs.key-entries');
     Route::put('/api/designs/{design}/highlights',  [DesignStateController::class, 'syncHighlights'])->name('api.designs.highlights');
+
+    // Phase 6 — Icon library
+    Route::get('/api/icons',                      [IconStateController::class, 'index'])->name('api.icons.index');
+    Route::post('/api/icons',                     [IconController::class, 'store'])->name('api.icons.store');
+    Route::delete('/api/icons/{iconLibrary}',     [IconController::class, 'destroy'])->name('api.icons.destroy');
+    Route::put('/api/designs/{design}/icons',     [DesignStateController::class, 'syncIcons'])->name('api.designs.icons');
 });

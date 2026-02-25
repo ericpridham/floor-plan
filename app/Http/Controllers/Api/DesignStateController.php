@@ -25,6 +25,7 @@ class DesignStateController extends Controller
             'floorplans.rooms',
             'keyEntries'      => fn($q) => $q->orderBy('sort_order'),
             'roomHighlights.keyEntry',
+            'icons'           => fn($q) => $q->orderBy('z_order'),
         ]);
 
         return response()->json($design);
@@ -77,6 +78,49 @@ class DesignStateController extends Controller
                 $design->roomHighlights()->create([
                     'room_id'      => $hl['room_id'],
                     'key_entry_id' => $hl['key_entry_id'],
+                ]);
+            }
+        });
+
+        return response()->json(['saved' => true]);
+    }
+
+    public function syncIcons(Request $request, Design $design): JsonResponse
+    {
+        $this->authorise($design);
+
+        $request->validate([
+            'icons'                   => ['present', 'array', 'max:500'],
+            'icons.*.icon_library_id' => [
+                'required', 'integer',
+                Rule::exists('icon_libraries', 'id')->where(function ($query) {
+                    $query->where(function ($q) {
+                        $q->whereNull('user_id')
+                          ->orWhere('user_id', Auth::id());
+                    });
+                }),
+            ],
+            'icons.*.x'               => ['required', 'numeric'],
+            'icons.*.y'               => ['required', 'numeric'],
+            'icons.*.width'           => ['required', 'numeric', 'min:0.01'],
+            'icons.*.height'          => ['required', 'numeric', 'min:0.01'],
+            'icons.*.rotation'        => ['required', 'numeric'],
+            'icons.*.is_free_placed'  => ['required', 'boolean'],
+            'icons.*.z_order'         => ['required', 'integer', 'min:0'],
+        ]);
+
+        DB::transaction(function () use ($design, $request) {
+            $design->icons()->delete();
+            foreach ($request->input('icons') as $icon) {
+                $design->icons()->create([
+                    'icon_library_id' => $icon['icon_library_id'],
+                    'x'               => $icon['x'],
+                    'y'               => $icon['y'],
+                    'width'           => $icon['width'],
+                    'height'          => $icon['height'],
+                    'rotation'        => $icon['rotation'],
+                    'is_free_placed'  => $icon['is_free_placed'],
+                    'z_order'         => $icon['z_order'],
                 ]);
             }
         });

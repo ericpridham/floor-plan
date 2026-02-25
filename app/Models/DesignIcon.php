@@ -16,4 +16,9 @@ class DesignIcon extends Model
     ];
 
     public function design(): BelongsTo { return $this->belongsTo(Design::class); }
+
+    public function iconLibrary(): BelongsTo
+    {
+        return $this->belongsTo(IconLibrary::class);
+    }
 }

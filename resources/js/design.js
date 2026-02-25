@@ -55,8 +55,8 @@
   // ─── Save ─────────────────────────────────────────────────────────────────
   function scheduleSave() {
     saveStatus.textContent = 'Unsaved changes…';
-    saveRetries = 0;
     if (isSaving) { dirtyWhileSaving = true; return; }
+    saveRetries = 0;
     clearTimeout(saveTimer);
     saveTimer = setTimeout(saveAll, 1000);
   }
@@ -88,6 +88,10 @@
       }).filter(Boolean);
 
       await apiFetch(window.HL_URL, 'PUT', { highlights: hls });
+
+      const iconPayload = placedIcons.map(({ icon_library_id, x, y, width, height, rotation, is_free_placed, z_order }) =>
+        ({ icon_library_id, x, y, width, height, rotation, is_free_placed, z_order }));
+      await apiFetch(window.ICONS_SYNC_URL, 'PUT', { icons: iconPayload });
 
       saveStatus.textContent = 'All changes saved';
       saveRetries = 0;
@@ -122,8 +126,18 @@
         const clientEntry = keyEntries.find(e => e._dbId === hl.key_entry_id);
         if (clientEntry) highlights[hl.room_id] = clientEntry.id;
       });
+
+      const dbIcons = state.icons || [];
+      placedIcons = dbIcons.map(ic => ({
+        id: nextIconId++, icon_library_id: ic.icon_library_id,
+        x: ic.x, y: ic.y, width: ic.width, height: ic.height,
+        rotation: ic.rotation, is_free_placed: ic.is_free_placed, z_order: ic.z_order,
+      }));
+
       renderCanvas();
       renderKeyList();
+      renderPlacedIcons();
+      loadIcons();
     } catch {
       saveStatus.textContent = 'Failed to load design state.';
     }
@@ -391,6 +405,13 @@
 
   // ─── Pan & zoom ───────────────────────────────────────────────────────────
   canvasViewport.addEventListener('mousedown', e => {
+    if (placingIconId) {
+      const rect = canvasContent.getBoundingClientRect();
+      const cx = (e.clientX - rect.left) / scale;
+      const cy = (e.clientY - rect.top) / scale;
+      placeIcon(cx, cy);
+      return;
+    }
     if (e.target !== canvasViewport && e.target !== canvasContent) return;
     if (activeEntry) { exitPaintMode(); return; }
     isPanning = true;
@@ -399,6 +420,7 @@
   });
 
   document.addEventListener('mousemove', e => {
+    handleIconMouseMove(e);
     if (!isPanning) return;
     panX = e.clientX - panStart.x;
     panY = e.clientY - panStart.y;
@@ -406,6 +428,7 @@
   });
 
   document.addEventListener('mouseup', () => {
+    handleIconMouseUp();
     isPanning = false;
     canvasViewport.style.cursor = activeEntry ? 'crosshair' : '';
   });
@@ -447,7 +470,27 @@
 
   // ─── Keyboard ─────────────────────────────────────────────────────────────
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') exitPaintMode();
+    if (e.key === 'Escape') {
+      exitPaintMode();
+      exitIconPlacementMode();
+      if (zContextMenu) { zContextMenu.remove(); zContextMenu = null; }
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
+      e.preventDefault();
+      if (selectedIcon !== null) {
+        const orig = placedIcons.find(i => i.id === selectedIcon);
+        if (orig) {
+          const copy = { ...orig, id: nextIconId++, x: orig.x + 16, y: orig.y + 16, z_order: placedIcons.length };
+          placedIcons.push(copy);
+          selectedIcon = copy.id;
+          renderPlacedIcons();
+          scheduleSave();
+        }
+      }
+    }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIcon !== null && document.activeElement.tagName !== 'INPUT') {
+      deleteSelectedIcon();
+    }
   });
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -458,6 +501,412 @@
     return `rgba(${r},${g},${b},${alpha})`;
   }
 
+  // ─── Icon panel ───────────────────────────────────────────────────────────
+  let allIcons       = { built_in: [], custom: [] };
+  let placingIconId  = null;
+  let placedIcons    = [];
+  let selectedIcon   = null;
+  let nextIconId     = 1;
+  let isGridMode     = true;
+  const GRID_SIZE    = 24;
+
+  function loadIcons() {
+    fetch(window.ICONS_URL, {
+      headers: { 'X-CSRF-TOKEN': window.CSRF_TOKEN, 'Accept': 'application/json' }
+    })
+    .then(r => r.json())
+    .then(data => {
+      allIcons = data;
+      renderIconPanel();
+    })
+    .catch(err => {
+      console.error('Failed to load icons:', err);
+      saveStatus.textContent = 'Failed to load icons.';
+    });
+  }
+
+  function renderIconPanel() {
+    const container = document.getElementById('iconListContainer');
+    if (!container) return;
+    const search = (document.getElementById('iconSearch')?.value || '').toLowerCase();
+
+    container.innerHTML = '';
+
+    const customFiltered = allIcons.custom.filter(i =>
+      i.label.toLowerCase().includes(search) || i.category.toLowerCase().includes(search));
+    if (customFiltered.length > 0) {
+      renderIconSection(container, 'My Icons', customFiltered, true);
+    }
+
+    const categories = [...new Set(allIcons.built_in.map(i => i.category))];
+    categories.forEach(cat => {
+      const icons = allIcons.built_in.filter(i =>
+        i.category === cat &&
+        (i.label.toLowerCase().includes(search) || cat.toLowerCase().includes(search) || !search));
+      if (icons.length > 0) renderIconSection(container, cat, icons, false);
+    });
+  }
+
+  function renderIconSection(container, title, icons, isCustom) {
+    const section = document.createElement('div');
+    section.className = 'mb-1';
+
+    const heading = document.createElement('p');
+    heading.className = 'text-xs font-semibold text-gray-500 uppercase tracking-wide px-2 pt-2 pb-1';
+    heading.textContent = title;
+    section.appendChild(heading);
+
+    const grid = document.createElement('div');
+    grid.className = 'grid grid-cols-3 gap-1 px-1 pb-2';
+
+    icons.forEach(icon => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'flex flex-col items-center gap-0.5 p-1 rounded hover:bg-indigo-50 text-center group transition-colors';
+      btn.title = icon.label;
+      btn.dataset.iconId = icon.id;
+
+      const img = document.createElement('img');
+      img.src = icon.url;
+      img.alt = icon.label;
+      img.className = 'w-8 h-8 object-contain';
+      btn.appendChild(img);
+
+      const lbl = document.createElement('span');
+      lbl.className = 'text-xs text-gray-500 group-hover:text-indigo-700 leading-tight truncate w-full text-center';
+      lbl.textContent = icon.label;
+      btn.appendChild(lbl);
+
+      if (isCustom) {
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'text-red-400 hover:text-red-600 text-xs mt-0.5';
+        del.textContent = '×';
+        del.title = 'Delete icon';
+        del.addEventListener('click', e => { e.stopPropagation(); deleteCustomIcon(icon.id, icon.label); });
+        btn.appendChild(del);
+      }
+
+      btn.addEventListener('click', () => enterIconPlacementMode(icon.id));
+      grid.appendChild(btn);
+    });
+
+    section.appendChild(grid);
+    container.appendChild(section);
+  }
+
+  function enterIconPlacementMode(iconId) {
+    placingIconId = iconId;
+    selectedIcon  = null;
+    exitPaintMode();
+    document.getElementById('canvasViewport').style.cursor = 'crosshair';
+    saveStatus.textContent = 'Click canvas to place icon…';
+  }
+
+  function exitIconPlacementMode() {
+    placingIconId = null;
+    document.getElementById('canvasViewport').style.cursor = '';
+  }
+
+  function snapToGrid(val) {
+    if (!isGridMode) return val;
+    return Math.round(val / GRID_SIZE) * GRID_SIZE;
+  }
+
+  function placeIcon(canvasX, canvasY) {
+    const icon = [...allIcons.built_in, ...allIcons.custom].find(i => i.id === placingIconId);
+    if (!icon) return;
+    const x = snapToGrid(canvasX - 24);
+    const y = snapToGrid(canvasY - 24);
+    const newIcon = {
+      id: nextIconId++, icon_library_id: icon.id,
+      x, y, width: 48, height: 48, rotation: 0,
+      is_free_placed: !isGridMode,
+      z_order: placedIcons.length,
+    };
+    placedIcons.push(newIcon);
+    exitIconPlacementMode();
+    renderPlacedIcons();
+    scheduleSave();
+  }
+
+  function renderPlacedIcons() {
+    canvasContent.querySelectorAll('.placed-icon').forEach(el => el.remove());
+
+    const sorted = [...placedIcons].sort((a, b) => a.z_order - b.z_order);
+
+    sorted.forEach(icon => {
+      const iconData = [...allIcons.built_in, ...allIcons.custom].find(i => i.id === icon.icon_library_id);
+      if (!iconData) return;
+
+      const el = document.createElement('div');
+      el.className = 'placed-icon absolute';
+      el.dataset.iconClientId = icon.id;
+      el.style.cssText = `
+        left: ${icon.x}px; top: ${icon.y}px;
+        width: ${icon.width}px; height: ${icon.height}px;
+        transform: rotate(${icon.rotation}deg);
+        transform-origin: center;
+        cursor: move;
+        position: absolute;
+        z-index: ${10 + icon.z_order};
+      `;
+
+      const img = document.createElement('img');
+      img.src = iconData.url;
+      img.alt = iconData.label;
+      img.style.cssText = 'width:100%;height:100%;object-fit:contain;pointer-events:none;user-select:none;';
+      img.draggable = false;
+      el.appendChild(img);
+
+      if (selectedIcon === icon.id) {
+        el.style.outline = '2px solid #6366f1';
+        el.style.outlineOffset = '2px';
+
+        const delBtn = document.createElement('button');
+        delBtn.textContent = '×';
+        delBtn.className = 'absolute -top-3 -right-3 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center z-20 leading-none';
+        delBtn.addEventListener('mousedown', e => { e.stopPropagation(); deleteSelectedIcon(); });
+        el.appendChild(delBtn);
+
+        const rotHandle = document.createElement('div');
+        rotHandle.className = 'absolute -top-8 left-1/2 w-3 h-3 bg-white border-2 border-indigo-500 rounded-full cursor-grab z-20';
+        rotHandle.style.transform = 'translateX(-50%)';
+        rotHandle.addEventListener('mousedown', e => { e.stopPropagation(); startRotate(e, icon); });
+        el.appendChild(rotHandle);
+
+        [['nw', 'top-0 left-0', 'nw-resize', 'translate(-50%,-50%)'],
+         ['ne', 'top-0 right-0', 'ne-resize', 'translate(50%,-50%)'],
+         ['sw', 'bottom-0 left-0', 'sw-resize', 'translate(-50%,50%)'],
+         ['se', 'bottom-0 right-0', 'se-resize', 'translate(50%,50%)']].forEach(([name, pos, cur, transform]) => {
+          const h = document.createElement('div');
+          h.className = `absolute w-3 h-3 bg-white border-2 border-indigo-500 rounded-sm z-20 ${pos}`;
+          h.style.cursor = cur;
+          h.style.transform = transform;
+          h.addEventListener('mousedown', e => { e.stopPropagation(); startIconResize(e, icon, name); });
+          el.appendChild(h);
+        });
+      }
+
+      el.addEventListener('mousedown', e => {
+        e.stopPropagation();
+        if (placingIconId) return;
+        selectedIcon = icon.id;
+        startIconMove(e, icon);
+        renderPlacedIcons();
+      });
+
+      el.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        showZOrderMenu(e, icon);
+      });
+
+      canvasContent.appendChild(el);
+    });
+  }
+
+  // ─── Icon drag/resize/rotate ──────────────────────────────────────────────
+  let iconDragState = null;
+
+  function startIconMove(e, icon) {
+    iconDragState = {
+      type: 'move', icon,
+      startX: e.clientX, startY: e.clientY,
+      origX: icon.x, origY: icon.y,
+    };
+  }
+
+  function startIconResize(e, icon, handle) {
+    iconDragState = {
+      type: 'resize', icon, handle,
+      startX: e.clientX, startY: e.clientY,
+      origWidth: icon.width, origHeight: icon.height,
+      origX: icon.x, origY: icon.y,
+    };
+  }
+
+  function startRotate(e, icon) {
+    const rect = canvasContent.querySelector(`[data-icon-client-id="${icon.id}"]`)?.getBoundingClientRect();
+    if (!rect) return;
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    iconDragState = { type: 'rotate', icon, centerX, centerY };
+  }
+
+  function handleIconMouseMove(e) {
+    if (!iconDragState) return;
+    const { type, icon } = iconDragState;
+
+    if (type === 'move') {
+      const dx = (e.clientX - iconDragState.startX) / scale;
+      const dy = (e.clientY - iconDragState.startY) / scale;
+      icon.x = snapToGrid(iconDragState.origX + dx);
+      icon.y = snapToGrid(iconDragState.origY + dy);
+      const el = canvasContent.querySelector(`[data-icon-client-id="${icon.id}"]`);
+      if (el) { el.style.left = icon.x + 'px'; el.style.top = icon.y + 'px'; }
+    } else if (type === 'resize') {
+      const dx = (e.clientX - iconDragState.startX) / scale;
+      const dy = (e.clientY - iconDragState.startY) / scale;
+      const delta = (Math.abs(dx) > Math.abs(dy) ? dx : dy);
+      if (e.shiftKey) {
+        icon.width  = Math.max(16, iconDragState.origWidth + dx);
+        icon.height = Math.max(16, iconDragState.origHeight + dy);
+      } else {
+        const newSize = Math.max(16, iconDragState.origWidth + delta);
+        icon.width = icon.height = newSize;
+      }
+      const el = canvasContent.querySelector(`[data-icon-client-id="${icon.id}"]`);
+      if (el) { el.style.width = icon.width + 'px'; el.style.height = icon.height + 'px'; }
+    } else if (type === 'rotate') {
+      const angle = Math.atan2(e.clientY - iconDragState.centerY, e.clientX - iconDragState.centerX) * 180 / Math.PI + 90;
+      icon.rotation = isGridMode ? Math.round(angle / 15) * 15 : Math.round(angle * 10) / 10;
+      const el = canvasContent.querySelector(`[data-icon-client-id="${icon.id}"]`);
+      if (el) el.style.transform = `rotate(${icon.rotation}deg)`;
+    }
+  }
+
+  function handleIconMouseUp() {
+    if (iconDragState) {
+      iconDragState = null;
+      renderPlacedIcons();
+      scheduleSave();
+    }
+  }
+
+  function deleteSelectedIcon() {
+    if (selectedIcon === null) return;
+    placedIcons = placedIcons.filter(i => i.id !== selectedIcon);
+    selectedIcon = null;
+    renderPlacedIcons();
+    scheduleSave();
+  }
+
+  // ─── Z-order context menu ─────────────────────────────────────────────────
+  let zContextMenu = null;
+
+  function showZOrderMenu(e, icon) {
+    if (zContextMenu) zContextMenu.remove();
+    selectedIcon = icon.id;
+    renderPlacedIcons();
+
+    const menu = document.createElement('div');
+    menu.className = 'fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 text-sm';
+    menu.style.left = e.clientX + 'px';
+    menu.style.top  = e.clientY + 'px';
+    zContextMenu = menu;
+
+    const actions = [
+      ['Bring to Front', () => { icon.z_order = Math.max(...placedIcons.map(i => i.z_order)) + 1; }],
+      ['Bring Forward',  () => {
+        const above = placedIcons.filter(i => i.z_order > icon.z_order);
+        if (above.length) { const next = Math.min(...above.map(i => i.z_order)); icon.z_order = next + 1; }
+      }],
+      ['Send Backward',  () => {
+        const below = placedIcons.filter(i => i.z_order < icon.z_order);
+        if (below.length) { const prev = Math.max(...below.map(i => i.z_order)); icon.z_order = prev - 1; }
+      }],
+      ['Send to Back',   () => { icon.z_order = Math.min(...placedIcons.map(i => i.z_order)) - 1; }],
+    ];
+
+    actions.forEach(([label, fn]) => {
+      const item = document.createElement('button');
+      item.className = 'w-full text-left px-4 py-1.5 hover:bg-gray-50 text-gray-700';
+      item.textContent = label;
+      item.addEventListener('click', () => {
+        fn();
+        menu.remove();
+        zContextMenu = null;
+        renderPlacedIcons();
+        scheduleSave();
+      });
+      menu.appendChild(item);
+    });
+
+    document.body.appendChild(menu);
+    setTimeout(() => {
+      document.addEventListener('click', () => { menu.remove(); zContextMenu = null; }, { once: true });
+    }, 0);
+  }
+
+  // ─── Custom icon upload ────────────────────────────────────────────────────
+  function setupIconUpload() {
+    const btn = document.getElementById('uploadIconBtn');
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+      const label    = document.getElementById('customIconLabel').value.trim();
+      const category = document.getElementById('customIconCategory').value.trim();
+      const file     = document.getElementById('customIconFile').files[0];
+      const errEl    = document.getElementById('uploadIconError');
+      errEl.classList.add('hidden');
+
+      if (!label || !category || !file) {
+        errEl.textContent = 'All fields required.';
+        errEl.classList.remove('hidden');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('label', label);
+      formData.append('category', category);
+      formData.append('icon', file);
+      formData.append('_token', window.CSRF_TOKEN);
+
+      try {
+        const res = await fetch(window.ICON_UPLOAD_URL, { method: 'POST', body: formData });
+        if (!res.ok) {
+          const err = await res.json();
+          errEl.textContent = Object.values(err.errors || {}).flat().join(' ');
+          errEl.classList.remove('hidden');
+          return;
+        }
+        const icon = await res.json();
+        allIcons.custom.unshift(icon);
+        document.getElementById('customIconLabel').value = '';
+        document.getElementById('customIconCategory').value = '';
+        document.getElementById('customIconFile').value = '';
+        renderIconPanel();
+      } catch {
+        errEl.textContent = 'Upload failed.';
+        errEl.classList.remove('hidden');
+      }
+    });
+  }
+
+  async function deleteCustomIcon(iconId, label) {
+    if (!confirm(`Delete "${label}"? It may be used in designs.`)) return;
+
+    try {
+      const res = await fetch(`${window.ICON_DELETE_URL}/${iconId}`, {
+        method: 'DELETE',
+        headers: { 'X-CSRF-TOKEN': window.CSRF_TOKEN, 'Accept': 'application/json' },
+      });
+      if (res.ok) {
+        allIcons.custom = allIcons.custom.filter(i => i.id !== iconId);
+        renderIconPanel();
+      } else {
+        saveStatus.textContent = 'Failed to delete icon.';
+      }
+    } catch {
+      saveStatus.textContent = 'Failed to delete icon.';
+    }
+  }
+
+  // ─── Grid/Free mode buttons ────────────────────────────────────────────────
+  document.getElementById('gridModeBtn')?.addEventListener('click', () => {
+    isGridMode = true;
+    document.getElementById('gridModeBtn').className = 'text-xs px-2 py-1 rounded bg-indigo-100 text-indigo-700 font-medium';
+    document.getElementById('freeModeBtn').className = 'text-xs px-2 py-1 rounded text-gray-500 hover:bg-gray-100';
+  });
+
+  document.getElementById('freeModeBtn')?.addEventListener('click', () => {
+    isGridMode = false;
+    document.getElementById('freeModeBtn').className = 'text-xs px-2 py-1 rounded bg-indigo-100 text-indigo-700 font-medium';
+    document.getElementById('gridModeBtn').className = 'text-xs px-2 py-1 rounded text-gray-500 hover:bg-gray-100';
+  });
+
+  document.getElementById('iconSearch')?.addEventListener('input', renderIconPanel);
+
   // ─── Init ─────────────────────────────────────────────────────────────────
+  setupIconUpload();
   loadState();
 })();

@@ -68,17 +68,56 @@
       <span class="text-xs text-gray-400">· click room to paint · Esc to exit</span>
     </div>
   </main>
+
+  {{-- Right: Icon panel --}}
+  <aside class="w-56 flex-shrink-0 bg-white border-l border-gray-200 flex flex-col" id="iconPanel">
+    <div class="px-3 py-2 border-b border-gray-200 flex items-center justify-between">
+      <h2 class="text-sm font-semibold text-gray-900">Icons</h2>
+      <div class="flex items-center gap-1">
+        <button id="gridModeBtn" class="text-xs px-2 py-1 rounded bg-indigo-100 text-indigo-700 font-medium">Grid</button>
+        <button id="freeModeBtn" class="text-xs px-2 py-1 rounded text-gray-500 hover:bg-gray-100">Free</button>
+      </div>
+    </div>
+    <div class="px-2 py-1.5 border-b border-gray-100">
+      <input type="text" id="iconSearch" placeholder="Search icons…"
+        class="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400">
+    </div>
+    <div class="flex-1 overflow-y-auto" id="iconListContainer">
+      {{-- Populated by JS --}}
+    </div>
+    {{-- Custom upload --}}
+    <div class="border-t border-gray-200 p-2">
+      <details class="text-xs">
+        <summary class="cursor-pointer text-gray-500 hover:text-gray-700 font-medium">Upload custom icon</summary>
+        <div class="mt-2 space-y-1.5" id="uploadIconForm">
+          <input type="text" id="customIconLabel" placeholder="Name" maxlength="100"
+            class="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400">
+          <input type="text" id="customIconCategory" placeholder="Category" maxlength="50"
+            class="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400">
+          <input type="file" id="customIconFile" accept=".svg,.png,image/svg+xml,image/png"
+            class="w-full text-xs file:text-xs file:py-0.5 file:px-2 file:rounded file:border-0 file:bg-indigo-50 file:text-indigo-700">
+          <button id="uploadIconBtn" class="w-full text-xs py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700">Upload</button>
+          <p id="uploadIconError" class="text-red-500 hidden"></p>
+        </div>
+      </details>
+    </div>
+  </aside>
+
 </div>
 @endsection
 
 @push('scripts')
 <script>
-window.DESIGN_ID   = {{ (int) $design->id }};
-window.DESIGN_NAME = {!! json_encode($design->name, JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) !!};
-window.STATE_URL   = '{{ route('api.designs.state', $design) }}';
-window.KEY_URL     = '{{ route('api.designs.key-entries', $design) }}';
-window.HL_URL      = '{{ route('api.designs.highlights', $design) }}';
-window.CSRF_TOKEN  = '{{ csrf_token() }}';
+window.DESIGN_ID      = {{ (int) $design->id }};
+window.DESIGN_NAME    = {!! json_encode($design->name, JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) !!};
+window.STATE_URL      = '{{ route('api.designs.state', $design) }}';
+window.KEY_URL        = '{{ route('api.designs.key-entries', $design) }}';
+window.HL_URL         = '{{ route('api.designs.highlights', $design) }}';
+window.CSRF_TOKEN     = '{{ csrf_token() }}';
+window.ICONS_URL      = '{{ route('api.icons.index') }}';
+window.ICONS_SYNC_URL = '{{ route('api.designs.icons', $design) }}';
+window.ICON_UPLOAD_URL = '{{ route('api.icons.store') }}';
+window.ICON_DELETE_URL = '{{ url('api/icons') }}';
 </script>
 @vite('resources/js/design.js')
 @endpush
